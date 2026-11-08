@@ -20,6 +20,7 @@ import { VaultChartHost } from './src/ai/vaultHost';
 import { AI_APPS, agentsSection, mcpUrl, mergeAgentsSection, newToken, shownSnippet } from './src/ai/connect';
 import AI_GUIDE from './docs/ai.md';
 import { BlockFormat, readBlock } from './src/blockjson';
+import { replaceChartBlock } from './src/text/replaceBlock';
 import { TextProblem } from './src/text/parse';
 import { printChartText, writeChartText } from './src/text/print';
 import { GLIDE_MS, PopIn, PopInState, drawnNames, ease, glides, mixCharts, reducedMotion } from './src/motion';
@@ -807,9 +808,9 @@ export default class EasyTikzPlugin extends Plugin implements PluginHost {
         try {
             await this.app.vault.process(file, (content) => {
                 // Index arithmetic, not String.replace: '$$' or "$'" in a label would be read as a replacement pattern.
-                const at = content.indexOf(original);
-                found = at >= 0;
-                return at < 0 ? content : content.slice(0, at) + updated + content.slice(at + original.length);
+                const result = replaceChartBlock(content, original, updated);
+                found = result !== null;
+                return result === null ? content : result;
             });
         } catch (e) {
             new Notice(`Could not save the chart width or alignment: ${errorText(e)}`);

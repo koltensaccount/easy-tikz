@@ -15,6 +15,7 @@ import type { ChartDraft } from './templates';
 import type { BlockFormat } from './blockjson';
 import { isChartText } from './text/parse';
 import { printChartText, writeChartText } from './text/print';
+import { replaceChartBlock } from './text/replaceBlock';
 import { PopIn, drawnNames, reducedMotion } from './motion';
 import { FieldHandle, PanelHost, PluginHost } from './ui/host';
 import type {
@@ -3491,19 +3492,17 @@ export class TikzModal extends Modal implements PanelHost {
             let found = false;
             try {
                 await this.app.vault.process(file, (content) => {
-                    const at = content.indexOf(original);
-                    if (at < 0) return content;
+                    const updated = replaceChartBlock(content, original, block);
+                    if (updated === null) return content;
                     found = true;
-                    // Splice by index: String.replace would expand `$&` / `$$` in labels.
-                    return content.slice(0, at) + block + content.slice(at + original.length);
+                    return updated;
                 });
             } catch (e) {
                 new Notice(`Could not save the chart to the file: ${errorText(e)}`);
                 return;
             }
             if (!found) {
-                new Notice('Could not find the original chart in the note (it may have been edited), so it was inserted at the current position.');
-                this.insertAtCursor(block);
+                new Notice('The original chart changed or is ambiguous. Nothing was overwritten. Reopen the chart from its note before saving.');
                 return;
             }
             // Later saves of this session still find the block.
