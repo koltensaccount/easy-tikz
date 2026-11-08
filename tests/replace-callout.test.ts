@@ -24,3 +24,12 @@ test('replacement labels are literal, not string replacement patterns',()=>{
     const value='```easy-tikz\nxlabel $$ $& $\'\n```';
     assert.equal(replaceChartBlock(original,original,value),value);
 });
+
+test('resize matches a callout chart with an indented opening and an unindented closing fence', () => {
+    const sibling = '> [!note] Sibling\n> ```easy-tikz\n> plot f(x) = cos(x)\n> ```\n\n';
+    const before = sibling + '> [!note] Target\n>  ```easy-tikz\n>  plot f(x) = x\n> ```\n';
+    const resized = '```easy-tikz\nset displayWidth = 440\nplot f(x) = x\n```';
+    const after = sibling + '> [!note] Target\n>  ```easy-tikz\n>  set displayWidth = 440\n>  plot f(x) = x\n> ```\n';
+    assert.equal(replaceChartBlock(before, original, resized), after);
+    assert.equal(replaceChartBlock(after, resized, original), before);
+});

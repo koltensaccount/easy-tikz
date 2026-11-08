@@ -787,8 +787,7 @@ export default class EasyTikzPlugin extends Plugin implements PluginHost {
     ): Promise<string | null> {
         const notFound = () => {
             new Notice(
-                'Easy TikZ could not find this chart in the note (it may be inside a callout, use a ~~~ fence, or have been edited), ' +
-                    'so its width and alignment were not saved.'
+                'Easy TikZ could not match this chart to a unique block in the note. Reopen the note and try changing its width or alignment again.'
             );
             return null;
         };

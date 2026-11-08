@@ -49,6 +49,7 @@ export function chartFences(count: number, lineAt: (n: number) => string, tags: 
             continue;
         }
         const depth = depthOf(prefix);
+        const indent = /^[ ]*/.exec(line.slice(prefix.length))![0].length;
         const closing = new RegExp(`^[ \\t]*\\${open[1][0]}{${open[1].length},}[ \\t]*$`);
         const body: string[] = [];
         let end = -1;
@@ -62,7 +63,10 @@ export function chartFences(count: number, lineAt: (n: number) => string, tags: 
                 end = m;
                 break;
             }
-            body.push(inner);
+            // Markdown removes up to the opening fence's indentation from
+            // each body line, after removing the quote markers.
+            const spaces = /^[ ]*/.exec(inner)![0].length;
+            body.push(inner.slice(Math.min(indent, spaces)));
         }
         const last = end > 0 ? end : m - 1;
         const tag = open[2].trim().split(/\s+/)[0] ?? '';
