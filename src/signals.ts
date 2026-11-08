@@ -3,7 +3,7 @@
  * discrete sequence expansion, and geometry snapping for direct canvas drawing.
  */
 import { Pt } from './geometry';
-import { niceInterval } from './util';
+import { formatTick, nextNiceStep, niceInterval, tickValues } from './util';
 
 // ---------------------------------------------------------------------------
 // π Tick Generation & Formatting
@@ -104,27 +104,28 @@ export function isPiAxis(
     axisLabel?: string,
     rawMin?: string | number,
     rawMax?: string | number,
-    formulas: string[] = []
+    _formulas: string[] = []
 ): boolean {
     if (mode === 'numeric') return false;
     if (mode === 'pi') return true;
 
     // In 'auto' mode:
-    const labelStr = String(axisLabel ?? '').trim();
-    if (/(?:[\u03c9\u03a9\u03b8\u03d5\u03c0]|\\?omega|\\?Omega|\\?theta|\\?phi|\\?pi|\brad\b|\bphase\b|\bfreq\b)/i.test(labelStr)) {
-        return true;
-    }
-
+    // 1. Explicit pi-based bounds (e.g. -2*pi, 2*pi, pi/2, etc.)
     const minStr = String(rawMin ?? '');
     const maxStr = String(rawMax ?? '');
-    if (/\bpi\b/i.test(minStr) || /\bpi\b/i.test(maxStr)) {
+    if (/(?:\\pi|\bpi\b|[\u03c0])/i.test(minStr) || /(?:\\pi|\bpi\b|[\u03c0])/i.test(maxStr)) {
         return true;
     }
 
-    for (const f of formulas) {
-        if (/\b(?:sin|cos|tan)\b/i.test(f) && /\bpi\b/i.test(f)) {
-            return true;
-        }
+    const labelStr = String(axisLabel ?? '').trim();
+    // 2. Explicit time or ordinary frequency (Hz) retain numeric ticks
+    if (/^(?:t|time|sec|seconds?|s|ms|f|freq|frequency|hz)$/i.test(labelStr)) {
+        return false;
+    }
+
+    // 3. Strong evidence that the axis represents angular position, phase, or angular frequency
+    if (/(?:[\u03c9\u03a9\u03b8\u03d5\u03c8\u03c0]|\\?(?:omega|Omega|theta|phi|psi|pi)\b|\brad\b|\bradians?\b|\brad\/s\b|\bphase\b|\bangle\b|\bangular\b)/i.test(labelStr)) {
+        return true;
     }
 
     return false;
@@ -232,6 +233,111 @@ export function shouldUsePiTicks(
 }
 
 // ---------------------------------------------------------------------------
+// Shared Tick Planning (Consistent Preview & Export)
+// ---------------------------------------------------------------------------
+
+export interface AxisTickPlan {
+    isPi: boolean;
+    step: number;
+    ticks: number[];
+    labelsSvg: string[];
+    labelsLatex: string[];
+}
+
+export interface ChartTickPlan {
+    x: AxisTickPlan;
+    y: AxisTickPlan;
+    stepX: number;
+    stepY: number;
+}
+
+/**
+ * Compute the shared tick plan used consistently by both SVG preview and TikZ export.
+ */
+export function computeTickPlan(
+    config: {
+        width?: number;
+        height?: number;
+        paperWidthCm?: number;
+        majorTickNum?: number;
+        equalScale?: boolean;
+        polar?: boolean;
+        tickFormatX?: 'auto' | 'numeric' | 'pi';
+        tickFormatY?: 'auto' | 'numeric' | 'pi';
+        xLabel?: string;
+        yLabel?: string;
+        rawRanges?: { xmin?: string; xmax?: string; ymin?: string; ymax?: string };
+        functions?: { expression?: string }[];
+    },
+    view: { xmin: number; xmax: number; ymin: number; ymax: number }
+): ChartTickPlan {
+    const formulas = config.functions?.map((f) => f.expression || '') || [];
+    const isPiX = isPiAxis(config.tickFormatX, config.xLabel, config.rawRanges?.xmin, config.rawRanges?.xmax, formulas);
+    const isPiY = isPiAxis(config.tickFormatY, config.yLabel, config.rawRanges?.ymin, config.rawRanges?.ymax, formulas);
+
+    const targetX = config.majorTickNum && config.majorTickNum > 0 ? config.majorTickNum : 8;
+    const targetY = Math.max(2, Math.round(targetX * 0.7));
+
+    const dx = view.xmax - view.xmin;
+    const dy = view.ymax - view.ymin;
+    const equal = !!(config.equalScale || config.polar);
+
+    const plotW = config.width && config.width > 0 ? config.width * 0.85 : 650;
+    const plotH = config.height && config.height > 0 ? config.height * 0.8 : 380;
+    const paperCm = Number(config.paperWidthCm);
+    const paperPt = (Number.isFinite(paperCm) && paperCm > 0 ? paperCm : 10) * 28.4527559;
+    const ptPx = Math.max(1, Math.min(2.5, config.width && config.width > 0 ? config.width / paperPt : 1));
+    const fs = 10 * ptPx;
+    const charWidthEm = 0.56;
+
+    let sx = isPiX ? piTickStep(dx, targetX) : (equal ? niceInterval(Math.max(dx, dy), targetX) : niceInterval(dx, targetX));
+    let sy = isPiY ? piTickStep(dy, targetY) : (equal ? sx : niceInterval(dy, targetY));
+
+    const formatX = (x: number) => (isPiX ? formatPiTick(x) ?? formatTick(x) : formatTick(x));
+    const formatY = (y: number) => (isPiY ? formatPiTick(y) ?? formatTick(y) : formatTick(y));
+
+    const fitsX = (step: number) => {
+        const ticks = isPiX ? piTickValues(view.xmin, view.xmax, step) : tickValues(view.xmin, view.xmax, step);
+        const widest = ticks.reduce((m, t) => Math.max(m, formatX(t).length), 1) * fs * charWidthEm;
+        return ticks.length < 2 || (plotW * step) / dx >= widest + fs * 0.8;
+    };
+    const fitsY = (step: number) => (plotH * step) / dy >= fs * 1.6;
+
+    for (let k = 0; k < 8 && !(fitsX(sx) && (!equal || fitsY(sx))); k++) {
+        sx = isPiX ? nextPiStep(sx) : nextNiceStep(sx);
+    }
+    if (equal) {
+        sy = sx;
+    } else {
+        for (let k = 0; k < 8 && !fitsY(sy); k++) {
+            sy = isPiY ? nextPiStep(sy) : nextNiceStep(sy);
+        }
+    }
+
+    const ticksX = isPiX ? piTickValues(view.xmin, view.xmax, sx) : tickValues(view.xmin, view.xmax, sx);
+    const ticksY = isPiY ? piTickValues(view.ymin, view.ymax, sy) : tickValues(view.ymin, view.ymax, sy);
+
+    return {
+        x: {
+            isPi: isPiX,
+            step: sx,
+            ticks: ticksX,
+            labelsSvg: ticksX.map(formatX),
+            labelsLatex: ticksX.map((x) => (isPiX ? formatPiLatex(x) ?? `$${formatTick(x)}$` : `$${formatTick(x)}$`)),
+        },
+        y: {
+            isPi: isPiY,
+            step: sy,
+            ticks: ticksY,
+            labelsSvg: ticksY.map(formatY),
+            labelsLatex: ticksY.map((y) => (isPiY ? formatPiLatex(y) ?? `$${formatTick(y)}$` : `$${formatTick(y)}$`)),
+        },
+        stepX: sx,
+        stepY: sy,
+    };
+}
+
+// ---------------------------------------------------------------------------
 // Discrete Sequence Parser
 // ---------------------------------------------------------------------------
 
@@ -326,12 +432,11 @@ export function findSnapCandidate(
     const cursorPx = toScreen(cursorMath);
 
     // =========================================================================
-    // CASE A: Shift key held with a previous point (Strict H/V lock)
+    // CASE A: Shift key held with a previous point (Strict H/V lock + 1D snap)
     // =========================================================================
     if (shiftHeld && lastPoint) {
-        const dx = Math.abs(cursorMath.x - lastPoint.x);
-        const dy = Math.abs(cursorMath.y - lastPoint.y);
-        const isHorizontal = dx >= dy;
+        const lastPx = toScreen(lastPoint);
+        const isHorizontal = Math.abs(cursorPx.x - lastPx.x) >= Math.abs(cursorPx.y - lastPx.y);
 
         // Base 1D constrained point
         const constrainedBase: Pt = isHorizontal
@@ -339,68 +444,71 @@ export function findSnapCandidate(
             : { x: lastPoint.x, y: cursorMath.y };
 
         const baseSc = toScreen(constrainedBase);
-        const baseDist = Math.hypot(baseSc.x - cursorPx.x, baseSc.y - cursorPx.y);
 
-        let bestOnLine: Candidate = {
+        // Fallback candidate: pure projection along constraint line
+        const bestCandidate: Candidate = {
             point: constrainedBase,
             screen: baseSc,
             kind: 'shift',
-            distPx: baseDist,
-            tier: 1,
+            distPx: Math.hypot(baseSc.x - cursorPx.x, baseSc.y - cursorPx.y),
+            tier: 4,
         };
 
-        // Along the locked line, see if we snap to an existing point on this line
+        // Priority 1: Existing vertices on or projecting to the constraint line
+        let bestPtCandidate: Candidate | null = null;
         if (existingPoints) {
             for (const ep of existingPoints) {
-                const onLine = isHorizontal
-                    ? Math.abs(ep.y - lastPoint.y) < 1e-5
-                    : Math.abs(ep.x - lastPoint.x) < 1e-5;
-                if (onLine) {
-                    const sc = toScreen(ep);
-                    const dist = Math.hypot(sc.x - cursorPx.x, sc.y - cursorPx.y);
-                    if (dist <= threshold && dist < bestOnLine.distPx) {
-                        bestOnLine = { point: ep, screen: sc, kind: 'point', distPx: dist, tier: 1 };
+                const epSc = toScreen(ep);
+                const distPerp = isHorizontal ? Math.abs(epSc.y - baseSc.y) : Math.abs(epSc.x - baseSc.x);
+                if (distPerp <= threshold) {
+                    const candPt: Pt = isHorizontal ? { x: ep.x, y: lastPoint.y } : { x: lastPoint.x, y: ep.y };
+                    const candSc = toScreen(candPt);
+                    const distAlong = isHorizontal ? Math.abs(candSc.x - baseSc.x) : Math.abs(candSc.y - baseSc.y);
+                    if (distAlong <= threshold && (!bestPtCandidate || distAlong < bestPtCandidate.distPx)) {
+                        bestPtCandidate = { point: candPt, screen: candSc, kind: 'point', distPx: distAlong, tier: 1 };
                     }
                 }
             }
         }
 
-        // Along the locked line, see if we snap to the origin
-        const originOnLine = isHorizontal
-            ? Math.abs(lastPoint.y) < 1e-5
-            : Math.abs(lastPoint.x) < 1e-5;
+        // Priority 2: Origin on the constraint line
+        let originCandidate: Candidate | null = null;
+        const originOnLine = isHorizontal ? Math.abs(lastPoint.y) < 1e-5 : Math.abs(lastPoint.x) < 1e-5;
         if (originOnLine) {
-            const sc = toScreen({ x: 0, y: 0 });
-            const dist = Math.hypot(sc.x - cursorPx.x, sc.y - cursorPx.y);
-            if (dist <= threshold && dist < bestOnLine.distPx) {
-                bestOnLine = { point: { x: 0, y: 0 }, screen: sc, kind: 'origin', distPx: dist, tier: 1 };
+            const candPt: Pt = isHorizontal ? { x: 0, y: lastPoint.y } : { x: lastPoint.x, y: 0 };
+            const candSc = toScreen(candPt);
+            const distAlong = isHorizontal ? Math.abs(candSc.x - baseSc.x) : Math.abs(candSc.y - baseSc.y);
+            if (distAlong <= threshold) {
+                originCandidate = { point: candPt, screen: candSc, kind: 'origin', distPx: distAlong, tier: 2 };
             }
         }
 
-        // Along the locked line, see if we snap to a grid step along the line
+        // Priority 3: Grid position along the constraint line
+        let gridCandidate: Candidate | null = null;
         if (isHorizontal && stepX > 0) {
             const gx = Math.round(cursorMath.x / stepX) * stepX;
-            const cand: Pt = { x: gx, y: lastPoint.y };
-            const sc = toScreen(cand);
-            const dist = Math.hypot(sc.x - cursorPx.x, sc.y - cursorPx.y);
-            if (dist <= threshold && dist < bestOnLine.distPx) {
-                bestOnLine = { point: cand, screen: sc, kind: 'grid', distPx: dist, tier: 1 };
+            const candPt: Pt = { x: gx, y: lastPoint.y };
+            const candSc = toScreen(candPt);
+            const distAlong = Math.abs(candSc.x - baseSc.x);
+            if (distAlong <= threshold) {
+                gridCandidate = { point: candPt, screen: candSc, kind: 'grid', distPx: distAlong, tier: 3 };
             }
         } else if (!isHorizontal && stepY > 0) {
             const gy = Math.round(cursorMath.y / stepY) * stepY;
-            const cand: Pt = { x: lastPoint.x, y: gy };
-            const sc = toScreen(cand);
-            const dist = Math.hypot(sc.x - cursorPx.x, sc.y - cursorPx.y);
-            if (dist <= threshold && dist < bestOnLine.distPx) {
-                bestOnLine = { point: cand, screen: sc, kind: 'grid', distPx: dist, tier: 1 };
+            const candPt: Pt = { x: lastPoint.x, y: gy };
+            const candSc = toScreen(candPt);
+            const distAlong = Math.abs(candSc.y - baseSc.y);
+            if (distAlong <= threshold) {
+                gridCandidate = { point: candPt, screen: candSc, kind: 'grid', distPx: distAlong, tier: 3 };
             }
         }
 
+        const chosen = bestPtCandidate ?? originCandidate ?? gridCandidate ?? bestCandidate;
         return {
-            point: bestOnLine.point,
-            screen: bestOnLine.screen,
-            kind: bestOnLine.kind,
-            distPx: bestOnLine.distPx,
+            point: chosen.point,
+            screen: chosen.screen,
+            kind: chosen.kind,
+            distPx: chosen.distPx,
         };
     }
 

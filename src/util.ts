@@ -16,6 +16,13 @@ export function niceInterval(range: number, targetTicks: number): number {
     return nice * mag;
 }
 
+/** The next nice step above `step` (1, 2, 5 times a power of ten). */
+export function nextNiceStep(step: number): number {
+    const mag = Math.pow(10, Math.floor(Math.log10(step) + 1e-9));
+    const n = Math.round(step / mag);
+    return (n < 2 ? 2 : n < 5 ? 5 : 10) * mag;
+}
+
 /**
  * Multiples of `step` inside [min, max] (inclusive, with a little slack for
  * rounding), computed as k * step so positions do not drift the way a

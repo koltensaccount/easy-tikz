@@ -12,7 +12,7 @@ import { MathContext, renameIdentifier, renameToolReferences } from './mathconte
 import { SceneCache, SceneIssue } from './scene';
 import { View } from './geometry';
 import { EXAMPLES, defaultParameter, newId, nextToolName } from './migrate';
-import { SnapResult, findSnapCandidate, formatCoord, isPiAxis, piTickStep } from './signals';
+import { SnapResult, computeTickPlan, findSnapCandidate, formatCoord, isPiAxis, piTickStep } from './signals';
 import type { ChartDraft } from './templates';
 import type { BlockFormat } from './blockjson';
 import { isChartText } from './text/parse';
@@ -3549,21 +3549,9 @@ export class TikzModal extends Modal implements PanelHost {
             const vy = layout.plot.y + fy * layout.plot.h;
             return { x: box.ox + vx * box.s, y: box.oy + vy * box.s };
         };
-        const tickFormatX = this.settings.getValue<'auto' | 'numeric' | 'pi'>('tickFormatX') || 'auto';
-        const tickFormatY = this.settings.getValue<'auto' | 'numeric' | 'pi'>('tickFormatY') || 'numeric';
-        const labelX = String(this.settings.getValue('axis_label_x') ?? 'x');
-        const labelY = String(this.settings.getValue('axis_label_y') ?? 'y');
-        const rawXmin = String(this.settings.getValue('xmin') ?? '');
-        const rawXmax = String(this.settings.getValue('xmax') ?? '');
-        const rawYmin = String(this.settings.getValue('ymin') ?? '');
-        const rawYmax = String(this.settings.getValue('ymax') ?? '');
-        const formulas = this.list<FunctionParameters>('functions').map(f => f.expression || '');
-
-        const isPiX = isPiAxis(tickFormatX, labelX, rawXmin, rawXmax, formulas);
-        const isPiY = isPiAxis(tickFormatY, labelY, rawYmin, rawYmax, formulas);
-
-        const stepX = isPiX ? piTickStep(v.xmax - v.xmin, 8) : niceInterval(v.xmax - v.xmin, 8);
-        const stepY = isPiY ? piTickStep(v.ymax - v.ymin, 8) : niceInterval(v.ymax - v.ymin, 8);
+        const plan = computeTickPlan(this.settings.toRendererConfig(), v);
+        const stepX = plan.stepX;
+        const stepY = plan.stepY;
         return findSnapCandidate(cursorMath, {
             view: v,
             stepX,

@@ -415,9 +415,9 @@ export function createChartPanel(parent: HTMLElement, host: PanelHost, opts: Cha
             });
             equal.setDisabled(isPolar());
 
-            const tickField = field(g.body, { label: 'Ticks', layout: 'inline' });
-            const tickFmt = segmented(tickField.controlEl, {
-                label: 'Tick format',
+            const tickFieldX = field(g.body, { label: 'X ticks', layout: 'inline' });
+            const tickFmtX = segmented(tickFieldX.controlEl, {
+                label: 'X tick format',
                 value: str(settings.getValue('tickFormatX')) || 'auto',
                 options: [
                     { value: 'auto', text: 'Auto' },
@@ -429,7 +429,23 @@ export function createChartPanel(parent: HTMLElement, host: PanelHost, opts: Cha
                     host.requestUpdate();
                 },
             });
-            tickField.bind(tickFmt.el);
+            tickFieldX.bind(tickFmtX.el);
+
+            const tickFieldY = field(g.body, { label: 'Y ticks', layout: 'inline' });
+            const tickFmtY = segmented(tickFieldY.controlEl, {
+                label: 'Y tick format',
+                value: str(settings.getValue('tickFormatY')) || 'numeric',
+                options: [
+                    { value: 'auto', text: 'Auto' },
+                    { value: 'numeric', text: 'Numeric' },
+                    { value: 'pi', text: 'π' },
+                ],
+                onChange: (value) => {
+                    settings.setValue('tickFormatY', value);
+                    host.requestUpdate();
+                },
+            });
+            tickFieldY.bind(tickFmtY.el);
         }
 
         labelInput(g.body, 'x label', xLabelKey, isPolar() ? 'none' : 'x');

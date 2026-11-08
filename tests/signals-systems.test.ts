@@ -10,12 +10,13 @@ import {
     nextPiStep,
     piTickValues,
     isPiAxis,
+    computeTickPlan,
 } from '../src/signals';
 import { computeScene2D } from '../src/scene';
-import { MathContext } from '../src/mathcontext';
+import { MathContext, fmtNum } from '../src/mathcontext';
 import { PointsTool, SegmentTool } from '../src/types';
 import { SettingsManager } from '../src/settings';
-import { recipes } from '../src/migrate';
+import { EXAMPLES, recipes } from '../src/migrate';
 
 // ---------------------------------------------------------------------------
 // π Tick Formatting & Auto-detection
@@ -139,7 +140,7 @@ test('findSnapCandidate snaps to grid, axes, origin, and points within threshold
     assert.equal(gridSnap!.point.x, 2);
     assert.equal(gridSnap!.point.y, 1);
 
-    // Shift key constrains to horizontal or vertical line from lastPoint
+    // Shift key constrains to horizontal or vertical line from lastPoint and snaps to nearby grid
     const shiftSnapH = findSnapCandidate(
         { x: 2.8, y: 1.15 },
         {
@@ -154,8 +155,9 @@ test('findSnapCandidate snaps to grid, axes, origin, and points within threshold
         }
     );
     assert.ok(shiftSnapH !== null);
-    assert.equal(shiftSnapH!.kind, 'shift');
-    assert.equal(shiftSnapH!.point.y, 1); // Locked horizontally to y = 1
+    assert.equal(shiftSnapH!.kind, 'grid');
+    near(shiftSnapH!.point.x, 3, 1e-4);
+    near(shiftSnapH!.point.y, 1, 1e-4); // Locked horizontally to y = 1
 });
 
 // ---------------------------------------------------------------------------
@@ -297,76 +299,344 @@ test('piTickValues produces exact multiples of pi step within range', () => {
     near(ticks[4], 2 * Math.PI, 1e-4);
 });
 
-test('isPiAxis detects explicit and auto conditions', () => {
-    assert.equal(isPiAxis('pi', 'x', '-5', '5'), true);
-    assert.equal(isPiAxis('numeric', 'x', '-pi', 'pi'), false);
-    assert.equal(isPiAxis('auto', '\\omega', '-5', '5'), true);
-    assert.equal(isPiAxis('auto', 'theta', '-5', '5'), true);
-    assert.equal(isPiAxis('auto', 'x', '-2*pi', '2*pi'), true);
-    assert.equal(isPiAxis('auto', 'x', '-5', '5', ['sin(2*pi*x)']), true);
-    assert.equal(isPiAxis('auto', 'x', '-5', '5', ['x^2']), false);
+test('isPiAxis policy: conservative detection of angular/phase vs time-domain waveforms', () => {
+    // Explicit modes always override
+    assert.equal(isPiAxis('pi', 'x', '-5', '5'), true, 'explicit pi mode');
+    assert.equal(isPiAxis('pi', 't', '0', '6'), true, 'explicit pi mode overrides ordinary axis name');
+    assert.equal(isPiAxis('numeric', 'x', '-pi', 'pi'), false, 'explicit numeric mode');
+    assert.equal(isPiAxis('numeric', '\\omega', '-2*pi', '2*pi'), false, 'explicit numeric overrides angular label and pi bounds');
+
+    // Bounds containing pi trigger pi ticks in auto mode
+    assert.equal(isPiAxis('auto', 'x', '-2*pi', '2*pi'), true, 'bounds with -2*pi to 2*pi');
+    assert.equal(isPiAxis('auto', 'x', '0', 'pi'), true, 'bounds with 0 to pi');
+
+    // Angular frequency and phase axes trigger pi ticks
+    assert.equal(isPiAxis('auto', '\\omega', '-5', '5'), true, 'omega label');
+    assert.equal(isPiAxis('auto', 'ω', '-5', '5'), true, 'unicode omega label');
+    assert.equal(isPiAxis('auto', '\\Omega', '-5', '5'), true, 'capital Omega label');
+    assert.equal(isPiAxis('auto', 'theta', '-5', '5'), true, 'theta label');
+    assert.equal(isPiAxis('auto', '\\phi', '-5', '5'), true, 'phi label');
+    assert.equal(isPiAxis('auto', 'rad', '-5', '5'), true, 'rad unit label');
+    assert.equal(isPiAxis('auto', 'radians', '-5', '5'), true, 'radians unit label');
+    assert.equal(isPiAxis('auto', 'phase', '-5', '5'), true, 'phase label');
+    assert.equal(isPiAxis('auto', 'angle', '-5', '5'), true, 'angle label');
+
+    // Ordinary time axes retain numeric ticks even if plotted formulas contain 2*pi
+    assert.equal(isPiAxis('auto', 't', '0', '6', ['exp(-0.4*t) * cos(2*pi*t)']), false, 'damped sinusoid on time axis t');
+    assert.equal(isPiAxis('auto', 'time', '0', '10', ['cos(2*pi*t)']), false, 'cosine on time axis');
+    assert.equal(isPiAxis('auto', 'sec', '0', '5', ['sin(2*pi*50*t)']), false, 'sec time axis');
+    assert.equal(isPiAxis('auto', 's', '0', '5', ['sin(2*pi*t)']), false, 's time axis');
+    assert.equal(isPiAxis('auto', 'ms', '0', '100', ['sin(2*pi*t)']), false, 'ms time axis');
+
+    // Ordinary frequency in Hz retains numeric ticks
+    assert.equal(isPiAxis('auto', 'f', '0', '1000'), false, 'frequency f in Hz');
+    assert.equal(isPiAxis('auto', 'freq', '0', '1000'), false, 'freq label in Hz');
+    assert.equal(isPiAxis('auto', 'frequency', '0', '1000'), false, 'frequency label in Hz');
+    assert.equal(isPiAxis('auto', 'Hz', '0', '1000'), false, 'Hz unit label');
+
+    // Gallery continuous-time waveform example retains numeric ticks
+    const ctExample = EXAMPLES.find((ex) => ex.id === 'ct-waveform');
+    assert.ok(ctExample !== undefined, 'ct-waveform gallery example exists');
+    const ctIsPiX = isPiAxis(
+        ctExample!.data.tickFormatX as 'auto' | 'numeric' | 'pi' | undefined,
+        ctExample!.data.axis_label_x as string | undefined,
+        ctExample!.data.xmin as string | undefined,
+        ctExample!.data.xmax as string | undefined,
+        (ctExample!.data.functions as any[])?.map((f: any) => f.expression)
+    );
+    assert.equal(ctIsPiX, false, 'ct-waveform X axis uses numeric ticks');
 });
 
 // ---------------------------------------------------------------------------
-// Snapping Priority Hierarchy
+// Snapping Priority Hierarchy & Shift 1D Snapping
 // ---------------------------------------------------------------------------
 
-test('findSnapCandidate enforces strict priority tiers', () => {
+test('Shift-constrained snapping snaps along the constraint line with strict priorities', () => {
+    // 1 math unit = 50 screen px (so 12 screen px = 0.24 math units)
     const toScreen = (p: { x: number; y: number }) => ({ x: 200 + p.x * 50, y: 200 - p.y * 50 });
     const view = { xmin: -4, xmax: 4, ymin: -4, ymax: 4 };
 
-    // Tier 1: Shift-constraint locks to horizontal line, even when near a competing grid point
-    const shiftSnap = findSnapCandidate(
-        { x: 1.05, y: 2.08 },
-        {
-            view,
-            stepX: 1,
-            stepY: 1,
-            toScreen,
-            existingPoints: [{ x: 1, y: 2 }],
-            lastPoint: { x: 0, y: 2.08 },
-            shiftHeld: true,
-            thresholdPx: 12,
-        }
-    );
-    assert.ok(shiftSnap !== null);
-    assert.equal(shiftSnap!.kind, 'shift');
-    near(shiftSnap!.point.y, 2.08, 1e-4);
-
-    // Tier 2: Existing point has priority over Origin when cursor is closer to existing point
-    const ptNearOrigin = findSnapCandidate(
-        { x: 0.04, y: 0.04 },
-        {
-            view,
-            stepX: 1,
-            stepY: 1,
-            toScreen,
-            existingPoints: [{ x: 0.04, y: 0.04 }],
-            lastPoint: null,
-            shiftHeld: false,
-            thresholdPx: 12,
-        }
-    );
-    assert.ok(ptNearOrigin !== null);
-    assert.equal(ptNearOrigin!.kind, 'point');
-    near(ptNearOrigin!.point.x, 0.04, 1e-4);
-
-    // Snap disabled returns null
-    const noSnap = findSnapCandidate(
-        { x: 0.01, y: 0.01 },
+    // 1. Horizontal Shift alignment to a nearby grid coordinate
+    // lastPoint = (0, 1), cursor at (2.1, 1.05).
+    // dx = 2.1 >= dy = 0.05 -> Horizontal lock to y = 1.
+    // Distance along line from 2.1 to grid x=2 is 0.1 * 50 = 5 px <= 12 px.
+    const hGridSnap = findSnapCandidate(
+        { x: 2.1, y: 1.05 },
         {
             view,
             stepX: 1,
             stepY: 1,
             toScreen,
             existingPoints: [],
-            lastPoint: null,
-            shiftHeld: false,
+            lastPoint: { x: 0, y: 1 },
+            shiftHeld: true,
+            thresholdPx: 12,
+        }
+    );
+    assert.ok(hGridSnap !== null, 'hGridSnap not null');
+    assert.equal(hGridSnap!.kind, 'grid');
+    near(hGridSnap!.point.x, 2, 1e-4);
+    near(hGridSnap!.point.y, 1, 1e-4); // Strictly on y = 1
+
+    // 2. Vertical Shift alignment to a nearby grid coordinate
+    // lastPoint = (1, 0), cursor at (1.05, 3.1).
+    // dy = 3.1 > dx = 0.05 -> Vertical lock to x = 1.
+    // Distance along line from 3.1 to grid y=3 is 0.1 * 50 = 5 px <= 12 px.
+    const vGridSnap = findSnapCandidate(
+        { x: 1.05, y: 3.1 },
+        {
+            view,
+            stepX: 1,
+            stepY: 1,
+            toScreen,
+            existingPoints: [],
+            lastPoint: { x: 1, y: 0 },
+            shiftHeld: true,
+            thresholdPx: 12,
+        }
+    );
+    assert.ok(vGridSnap !== null, 'vGridSnap not null');
+    assert.equal(vGridSnap!.kind, 'grid');
+    near(vGridSnap!.point.x, 1, 1e-4); // Strictly on x = 1
+    near(vGridSnap!.point.y, 3, 1e-4);
+
+    // 3. Existing vertex on the constrained line
+    // lastPoint = (0, 1), existing point at (2.5, 1). Cursor at (2.55, 1.02).
+    const epOnLineSnap = findSnapCandidate(
+        { x: 2.55, y: 1.02 },
+        {
+            view,
+            stepX: 1,
+            stepY: 1,
+            toScreen,
+            existingPoints: [{ x: 2.5, y: 1 }],
+            lastPoint: { x: 0, y: 1 },
+            shiftHeld: true,
+            thresholdPx: 12,
+        }
+    );
+    assert.ok(epOnLineSnap !== null);
+    assert.equal(epOnLineSnap!.kind, 'point');
+    near(epOnLineSnap!.point.x, 2.5, 1e-4);
+    near(epOnLineSnap!.point.y, 1, 1e-4);
+
+    // 4. Existing vertex slightly off the constrained line (perpendicularly within threshold)
+    // lastPoint = (0, 1), existing point at (2.5, 1.08) (4px off perpendicularly). Cursor at (2.52, 1.02).
+    // Returned point must remain strictly on the constraint line y = 1.
+    const epOffLineSnap = findSnapCandidate(
+        { x: 2.52, y: 1.02 },
+        {
+            view,
+            stepX: 1,
+            stepY: 1,
+            toScreen,
+            existingPoints: [{ x: 2.5, y: 1.08 }],
+            lastPoint: { x: 0, y: 1 },
+            shiftHeld: true,
+            thresholdPx: 12,
+        }
+    );
+    assert.ok(epOffLineSnap !== null);
+    assert.equal(epOffLineSnap!.kind, 'point');
+    near(epOffLineSnap!.point.x, 2.5, 1e-4);
+    near(epOffLineSnap!.point.y, 1, 1e-4); // Strictly on constraint line y = 1
+
+    // 5. Origin on the constrained line
+    // lastPoint = (2, 0) -> horizontal constraint line is y = 0 (contains origin!).
+    // Cursor at (0.1, 0.02) -> snaps to (0, 0).
+    const originOnLineSnap = findSnapCandidate(
+        { x: 0.1, y: 0.02 },
+        {
+            view,
+            stepX: 1,
+            stepY: 1,
+            toScreen,
+            existingPoints: [],
+            lastPoint: { x: 2, y: 0 },
+            shiftHeld: true,
+            thresholdPx: 12,
+        }
+    );
+    assert.ok(originOnLineSnap !== null);
+    assert.equal(originOnLineSnap!.kind, 'origin');
+    near(originOnLineSnap!.point.x, 0, 1e-4);
+    near(originOnLineSnap!.point.y, 0, 1e-4);
+
+    // 6. Shift snapping at different zoom scales (100 px per math unit)
+    const toScreenZoomed = (p: { x: number; y: number }) => ({ x: 400 + p.x * 100, y: 400 - p.y * 100 });
+    // Cursor at offset 0.10 units = 10 px <= 12 px -> snaps to grid x=2
+    const zoomSnapClose = findSnapCandidate(
+        { x: 2.1, y: 1.01 },
+        {
+            view,
+            stepX: 1,
+            stepY: 1,
+            toScreen: toScreenZoomed,
+            existingPoints: [],
+            lastPoint: { x: 0, y: 1 },
+            shiftHeld: true,
+            thresholdPx: 12,
+        }
+    );
+    assert.equal(zoomSnapClose!.kind, 'grid');
+    near(zoomSnapClose!.point.x, 2, 1e-4);
+
+    // Cursor at offset 0.15 units = 15 px > 12 px -> does not snap to grid, stays on line as shift
+    const zoomSnapFar = findSnapCandidate(
+        { x: 2.15, y: 1.01 },
+        {
+            view,
+            stepX: 1,
+            stepY: 1,
+            toScreen: toScreenZoomed,
+            existingPoints: [],
+            lastPoint: { x: 0, y: 1 },
+            shiftHeld: true,
+            thresholdPx: 12,
+        }
+    );
+    assert.equal(zoomSnapFar!.kind, 'shift');
+    near(zoomSnapFar!.point.x, 2.15, 1e-4);
+    near(zoomSnapFar!.point.y, 1, 1e-4);
+
+    // 7. Cursor far from valid targets (falls back to pure projection)
+    // lastPoint = (0, 1), cursor at (2.45, 1.02). Distance to 2 and 3 is >= 22.5 px > 12 px.
+    const farSnap = findSnapCandidate(
+        { x: 2.45, y: 1.02 },
+        {
+            view,
+            stepX: 1,
+            stepY: 1,
+            toScreen,
+            existingPoints: [],
+            lastPoint: { x: 0, y: 1 },
+            shiftHeld: true,
+            thresholdPx: 12,
+        }
+    );
+    assert.ok(farSnap !== null);
+    assert.equal(farSnap!.kind, 'shift');
+    near(farSnap!.point.x, 2.45, 1e-4);
+    near(farSnap!.point.y, 1, 1e-4);
+
+    // 8. Snapping explicitly disabled returns null
+    const disabledSnap = findSnapCandidate(
+        { x: 2.05, y: 1.02 },
+        {
+            view,
+            stepX: 1,
+            stepY: 1,
+            toScreen,
+            existingPoints: [],
+            lastPoint: { x: 0, y: 1 },
+            shiftHeld: true,
             snapEnabled: false,
             thresholdPx: 12,
         }
     );
-    assert.equal(noSnap, null);
+    assert.equal(disabledSnap, null);
+
+    // 9. Competing targets near threshold: Existing point wins over grid
+    const compSnap = findSnapCandidate(
+        { x: 2.06, y: 1.02 },
+        {
+            view,
+            stepX: 1,
+            stepY: 1,
+            toScreen,
+            existingPoints: [{ x: 2.08, y: 1 }],
+            lastPoint: { x: 0, y: 1 },
+            shiftHeld: true,
+            thresholdPx: 12,
+        }
+    );
+    assert.equal(compSnap!.kind, 'point', 'existing point has priority over grid');
+    near(compSnap!.point.x, 2.08, 1e-4);
+});
+
+// ---------------------------------------------------------------------------
+// Shared Tick Planning & Preview/Export Consistency
+// ---------------------------------------------------------------------------
+
+test('computeTickPlan ensures identical tick steps and values across preview and export', () => {
+    // 1. Both axes using pi
+    const bothPi = computeTickPlan(
+        {
+            width: 760,
+            height: 480,
+            tickFormatX: 'pi',
+            tickFormatY: 'pi',
+            xLabel: 'x',
+            yLabel: 'y',
+        },
+        { xmin: -6.283, xmax: 6.283, ymin: -3.142, ymax: 3.142 }
+    );
+    assert.equal(bothPi.x.isPi, true);
+    assert.equal(bothPi.y.isPi, true);
+    near(bothPi.stepX, Math.PI, 1e-4);
+    near(bothPi.stepY, Math.PI / 3, 1e-4);
+    assert.ok(bothPi.x.labelsLatex.some((l) => l.includes('\\pi')));
+    assert.ok(bothPi.y.labelsLatex.some((l) => l.includes('\\pi')));
+
+    // 2. Mixed numeric and pi axes (X is pi, Y is numeric)
+    const mixed = computeTickPlan(
+        {
+            width: 760,
+            height: 480,
+            tickFormatX: 'pi',
+            tickFormatY: 'numeric',
+            xLabel: '\\omega',
+            yLabel: 'A',
+        },
+        { xmin: -6.283, xmax: 6.283, ymin: -2, ymax: 2 }
+    );
+    assert.equal(mixed.x.isPi, true);
+    assert.equal(mixed.y.isPi, false);
+    near(mixed.stepX, Math.PI, 1e-4);
+    near(mixed.stepY, 0.5, 1e-4);
+
+    // 3. Small plot width requires reduced tick density (widens step)
+    const normalPlan = computeTickPlan(
+        {
+            width: 760,
+            height: 480,
+            tickFormatX: 'pi',
+            xLabel: 'x',
+        },
+        { xmin: -3.5, xmax: 3.5, ymin: -2, ymax: 2 }
+    );
+    const smallPlan = computeTickPlan(
+        {
+            width: 250, // very small width forces widening
+            height: 200,
+            tickFormatX: 'pi',
+            xLabel: 'x',
+        },
+        { xmin: -3.5, xmax: 3.5, ymin: -2, ymax: 2 }
+    );
+    assert.ok(smallPlan.stepX >= normalPlan.stepX, 'small plot widens pi tick step to avoid overcrowding');
+
+    // 4. End-to-end equivalence between computeTickPlan and SettingsManager.generateTikzCode
+    const sm = SettingsManager.fromJSON({
+        v: 4,
+        xmin: '-6.283',
+        xmax: '6.283',
+        ymin: '-3.142',
+        ymax: '3.142',
+        tickFormatX: 'pi',
+        tickFormatY: 'pi',
+        axis_style: 'middle',
+        size_x_cm: 12,
+        size_y_cm: 8,
+    });
+    const cfg = sm.toRendererConfig();
+    const tikz = sm.generateTikzCode();
+    // Verify TikZ export contains xtick and ytick matching the plan
+    const plan = computeTickPlan(cfg, { xmin: cfg.xmin, xmax: cfg.xmax, ymin: cfg.ymin, ymax: cfg.ymax });
+    const expectedXtick = plan.x.ticks.map(fmtNum).join(', ');
+    assert.ok(tikz.includes(`xtick={${expectedXtick}}`), 'TikZ export xtick matches shared plan');
+    const expectedYtick = plan.y.ticks.map(fmtNum).join(', ');
+    assert.ok(tikz.includes(`ytick={${expectedYtick}}`), 'TikZ export ytick matches shared plan');
 });
 
 // ---------------------------------------------------------------------------
