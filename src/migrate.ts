@@ -690,6 +690,11 @@ export function migrateSettings(data: Record<string, unknown>): Record<string, u
         else if (typeof v !== 'string' || (legacy && !v.trim())) delete out[key];
     }
     if (legacy) {
+        if (!('size_x_cm' in src)) out.size_x_cm = 10;
+        if (!('size_y_cm' in src)) out.size_y_cm = 10;
+        if (!('showLargeGrid' in src)) out.showLargeGrid = false;
+        if (!('majorTickNum' in src)) out.majorTickNum = 8;
+        if (!('graphAppearance' in src)) out.graphAppearance = 'classic-square';
         if (typeof src.title === 'string') out.title = legacyLabel(src.title);
         for (const key of LEGACY_TEXT_KEYS) {
             const v = src[key];

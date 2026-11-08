@@ -6,14 +6,24 @@
  */
 import { MathContext, ValidateResult } from '../mathcontext';
 import { RANGE_DEFAULTS, RangeKey, SettingsManager } from '../settings';
+import {
+    APPEARANCE_OPTIONS,
+    AppearancePresetId,
+    applyPreset,
+    detectPreset,
+    getPresetById,
+} from '../appearance';
 import { FieldHandle, PanelHost } from './host';
 import {
     ChipHandle,
+    DropdownHandle,
     ExprInputHandle,
+    FieldLayoutHandle,
     LiveSliderHandle,
     SegmentedHandle,
     TextInputHandle,
     chip,
+    dropdown,
     exprInput,
     field,
     formatDecimals,
@@ -98,6 +108,58 @@ export function createChartPanel(parent: HTMLElement, host: PanelHost, opts: Cha
     let elevation: LiveSliderHandle | null = null;
     let azimuth: LiveSliderHandle | null = null;
     let axisStyle: SegmentedHandle<string> | null = null;
+    let appearanceDropdown: DropdownHandle<AppearancePresetId> | null = null;
+    let appearanceField: FieldLayoutHandle | null = null;
+    let majorDivisionsSlider: LiveSliderHandle | null = null;
+    let minorLinesSlider: LiveSliderHandle | null = null;
+    let widthSlider: LiveSliderHandle | null = null;
+    let heightSlider: LiveSliderHandle | null = null;
+
+    const getPresetDescription = (presetId: AppearancePresetId): string => {
+        if (presetId === 'custom') return 'Custom proportions and appearance';
+        const preset = getPresetById(presetId);
+        return preset ? `${preset.ratio} — ${preset.description}` : '';
+    };
+
+    const updateAppearanceDropdown = () => {
+        const active = detectPreset(settings);
+        appearanceDropdown?.setValue(active);
+        appearanceField?.setHint(getPresetDescription(active));
+    };
+
+    const syncAppearanceControls = () => {
+        const active = detectPreset(settings);
+        appearanceDropdown?.setValue(active);
+        appearanceField?.setHint(getPresetDescription(active));
+        axisStyle?.setValue(str(settings.getValue('axis_style')) || 'box');
+        gridMajor?.setValue(settings.getValue('showLargeGrid') === true);
+        gridMinor?.setValue(settings.getValue('showSmallGrid') === true);
+        majorDivisionsSlider?.setValue(num(settings.getValue('majorTickNum'), 8));
+        minorLinesSlider?.setValue(num(settings.getValue('gridSize'), 5));
+        widthSlider?.setValue(num(settings.getValue('size_x_cm'), 10));
+        heightSlider?.setValue(num(settings.getValue('size_y_cm'), 10));
+    };
+
+    const buildAppearance = () => {
+        const g = group(el, 'Graph appearance');
+        const active = detectPreset(settings);
+        appearanceField = field(g.body, {
+            label: 'Preset',
+            layout: 'inline',
+            hint: getPresetDescription(active),
+        });
+        appearanceDropdown = dropdown<AppearancePresetId>(appearanceField.controlEl, {
+            label: 'Graph appearance',
+            value: active,
+            options: APPEARANCE_OPTIONS,
+            onChange: (presetId) => {
+                applyPreset(settings, presetId);
+                syncAppearanceControls();
+                host.requestUpdate();
+            },
+        });
+        appearanceField.bind(appearanceDropdown.el);
+    };
 
     const isPolar = () => settings.getValue('coordinateSystem') === 'polar';
     const xLabelKey = () => (isPolar() ? 'axis_label_x_polar' : 'axis_label_x');
@@ -209,6 +271,7 @@ export function createChartPanel(parent: HTMLElement, host: PanelHost, opts: Cha
                 ],
                 onChange: (value) => {
                     settings.setValue('axis_style', value);
+                    updateAppearanceDropdown();
                     host.requestUpdate();
                 },
             });
@@ -269,7 +332,8 @@ export function createChartPanel(parent: HTMLElement, host: PanelHost, opts: Cha
         key: string,
         range: { min: number; max: number; step: number; fallback: number },
         format?: (v: number) => string,
-        hint?: string
+        hint?: string,
+        afterInput?: (value: number) => void
     ): LiveSliderHandle => {
         const f = field(parent, { label, layout: 'inline', hint });
         const slider = liveSlider(f.controlEl, {
@@ -281,6 +345,7 @@ export function createChartPanel(parent: HTMLElement, host: PanelHost, opts: Cha
             format,
             onInput: (value) => {
                 settings.setValue(key, value);
+                afterInput?.(value);
                 host.requestFrame();
             },
         });
@@ -296,6 +361,7 @@ export function createChartPanel(parent: HTMLElement, host: PanelHost, opts: Cha
             value: settings.getValue('showLargeGrid') === true,
             onChange: (on) => {
                 settings.setValue('showLargeGrid', on);
+                updateAppearanceDropdown();
                 host.requestUpdate();
             },
         });
@@ -304,18 +370,51 @@ export function createChartPanel(parent: HTMLElement, host: PanelHost, opts: Cha
             value: settings.getValue('showSmallGrid') === true,
             onChange: (on) => {
                 settings.setValue('showSmallGrid', on);
+                updateAppearanceDropdown();
                 host.requestUpdate();
             },
         });
-        sliderField(g.body, 'Major divisions', 'majorTickNum', { min: 2, max: 20, step: 1, fallback: 8 });
-        sliderField(g.body, 'Minor lines', 'gridSize', { min: 1, max: 10, step: 1, fallback: 5 });
+        majorDivisionsSlider = sliderField(
+            g.body,
+            'Major divisions',
+            'majorTickNum',
+            { min: 2, max: 20, step: 1, fallback: 8 },
+            undefined,
+            undefined,
+            () => updateAppearanceDropdown()
+        );
+        minorLinesSlider = sliderField(
+            g.body,
+            'Minor lines',
+            'gridSize',
+            { min: 1, max: 10, step: 1, fallback: 5 },
+            undefined,
+            undefined,
+            () => updateAppearanceDropdown()
+        );
     };
 
     const buildExportSize = () => {
         const g = group(el, 'Export size');
         const cm = (v: number) => `${formatDecimals(v, 1)} cm`;
-        sliderField(g.body, 'Width', 'size_x_cm', { min: 2, max: 30, step: 0.5, fallback: 10 }, cm);
-        sliderField(g.body, 'Height', 'size_y_cm', { min: 2, max: 30, step: 0.5, fallback: 8 }, cm);
+        widthSlider = sliderField(
+            g.body,
+            'Width',
+            'size_x_cm',
+            { min: 2, max: 30, step: 0.5, fallback: 10 },
+            cm,
+            undefined,
+            () => updateAppearanceDropdown()
+        );
+        heightSlider = sliderField(
+            g.body,
+            'Height',
+            'size_y_cm',
+            { min: 2, max: 30, step: 0.5, fallback: 8 },
+            cm,
+            undefined,
+            () => updateAppearanceDropdown()
+        );
     };
 
     const buildNote = () => {
@@ -369,9 +468,13 @@ export function createChartPanel(parent: HTMLElement, host: PanelHost, opts: Cha
         unregister = [];
         ranges.forEach((h) => h.destroy());
         ranges.clear();
+        appearanceDropdown = null;
+        appearanceField = null;
+        majorDivisionsSlider = minorLinesSlider = widthSlider = heightSlider = null;
         gridMajor = gridMinor = elevation = azimuth = null;
         axisStyle = null;
         el.empty();
+        buildAppearance();
         buildRanges();
         if (host.is3D()) buildCamera();
         buildAxes();
@@ -396,6 +499,13 @@ export function createChartPanel(parent: HTMLElement, host: PanelHost, opts: Cha
             elevation?.setValue(num(settings.getValue('rotationX'), 30));
             azimuth?.setValue(num(settings.getValue('rotationZ'), 45));
             axisStyle?.setValue(str(settings.getValue('axis_style')) || 'box');
+            majorDivisionsSlider?.setValue(num(settings.getValue('majorTickNum'), 8));
+            minorLinesSlider?.setValue(num(settings.getValue('gridSize'), 5));
+            widthSlider?.setValue(num(settings.getValue('size_x_cm'), 10));
+            heightSlider?.setValue(num(settings.getValue('size_y_cm'), 10));
+            const activePreset = detectPreset(settings);
+            appearanceDropdown?.setValue(activePreset);
+            appearanceField?.setHint(getPresetDescription(activePreset));
         },
         hasErrors: () => Array.from(ranges.values()).some((h) => h.hasError()),
     };

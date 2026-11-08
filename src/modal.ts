@@ -557,8 +557,8 @@ export class TikzModal extends Modal implements PanelHost {
             const original = this.originalBlockText;
             this.blockFormat = initialState.blockFormat ?? (original ? (isChartText(blockBody(original)) ? 'text' : 'json') : null);
         } else {
-            // fromJSON runs the v4 migration, so new charts get the v4 defaults too.
-            this.settings = SettingsManager.fromJSON({});
+            // New charts get the Academic 4:3 default preset.
+            this.settings = SettingsManager.newChart();
         }
     }
 
@@ -1213,6 +1213,7 @@ export class TikzModal extends Modal implements PanelHost {
 
         const pill = stage.createDiv({ cls: 'etz-pill' });
         iconButton(pill, { icon: 'maximize-2', label: 'Fit ranges to the functions', tooltipPosition: 'top', onClick: () => this.autoFit() });
+        iconButton(pill, { icon: 'crosshair', label: 'Center origin', tooltipPosition: 'top', onClick: () => this.centerOrigin() });
         iconButton(pill, { icon: 'rotate-ccw', label: 'Reset ranges', tooltipPosition: 'top', onClick: () => this.resetRanges() });
         this.pill2D = pill.createDiv({ cls: 'etz-pill-group' });
         this.gridBtn = iconButton(this.pill2D, {
@@ -3128,7 +3129,7 @@ export class TikzModal extends Modal implements PanelHost {
     }
 
     /** The numeric view the settings resolve to now (pan start values may be one frame old). */
-    private currentView(): View | null {
+    private currentView(): (View & { zmin?: number; zmax?: number }) | null {
         try {
             return this.settings.resolveView(this.math()).view;
         } catch {
@@ -3234,6 +3235,66 @@ export class TikzModal extends Modal implements PanelHost {
     private rangesAreDefault(): boolean {
         const keys: RangeKey[] = this.is3D() ? ['xmin', 'xmax', 'ymin', 'ymax', 'zmin', 'zmax'] : ['xmin', 'xmax', 'ymin', 'ymax'];
         return keys.every((key) => String(this.settings.getValue(key) ?? '').trim() === RANGE_DEFAULTS[key]);
+    }
+
+    /**
+     * Center origin (0, 0): immediately places the origin at the exact center
+     * of the plotting area while preserving span, zoom, plotted data, annotations,
+     * and appearance preset.
+     */
+    private centerOrigin() {
+        this.dropPendingWheel();
+        let view = this.currentView();
+        if (!view) {
+            try {
+                view = this.settings.resolveView(this.math()).view;
+            } catch (e) {
+                this.flashStatus(`Cannot center origin: ${errorText(e)}`);
+                return;
+            }
+        }
+        if (!view) {
+            this.flashStatus('Cannot center origin: invalid range bounds');
+            return;
+        }
+
+        const ok = (a: number, b: number) => Number.isFinite(a) && Number.isFinite(b) && a < b;
+        let changed = false;
+
+        if (ok(view.xmin, view.xmax)) {
+            const w = view.xmax - view.xmin;
+            if (w > 0) {
+                const halfW = w / 2;
+                this.settings.setValue('xmin', formatBound(-halfW, w));
+                this.settings.setValue('xmax', formatBound(halfW, w));
+                changed = true;
+            }
+        }
+
+        if (ok(view.ymin, view.ymax)) {
+            const h = view.ymax - view.ymin;
+            if (h > 0) {
+                const halfH = h / 2;
+                this.settings.setValue('ymin', formatBound(-halfH, h));
+                this.settings.setValue('ymax', formatBound(halfH, h));
+                changed = true;
+            }
+        }
+
+        if (this.is3D() && view.zmin !== undefined && view.zmax !== undefined && ok(view.zmin, view.zmax)) {
+            const d = view.zmax - view.zmin;
+            if (d > 0) {
+                const halfD = d / 2;
+                this.settings.setValue('zmin', formatBound(-halfD, d));
+                this.settings.setValue('zmax', formatBound(halfD, d));
+                changed = true;
+            }
+        }
+
+        if (changed) {
+            this.chartPanel?.syncView();
+            this.requestUpdate();
+        }
     }
 
     private resetRanges() {

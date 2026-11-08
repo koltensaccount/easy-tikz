@@ -324,6 +324,7 @@ test('the preview canvas has the paper aspect, previewSize on the long side', ()
         return [c.width, c.height];
     };
     assert.deepEqual(canvas({}), [760, 760]);
+    assert.deepEqual(canvas({ size_x_cm: 10, size_y_cm: 10 }), [760, 760]);
     assert.deepEqual(canvas({ size_x_cm: 10, size_y_cm: 8 }), [760, 608]);
     // Wide and tall charts keep their shape (3.x clamped the ratio to 0.35..1.8).
     assert.deepEqual(canvas({ size_x_cm: 16, size_y_cm: 4 }), [760, 190]);
@@ -332,6 +333,8 @@ test('the preview canvas has the paper aspect, previewSize on the long side', ()
     assert.deepEqual(canvas({ size_x_cm: 30, size_y_cm: 3 }), [760, 140]);
     assert.deepEqual(canvas({ size_x_cm: 16, size_y_cm: 4, previewSize: 320 }), [320, 140]);
     assert.deepEqual(canvas({ previewSize: 5000 }), [1600, 1600]);
+    const nc = SettingsManager.newChart().toRendererConfig();
+    assert.deepEqual([nc.width, nc.height], [760, 570]);
     // Paper sizes are clamped like the export's.
     assert.deepEqual(settings({ size_x_cm: 0.2, size_y_cm: 250 }).paperSize(), { w: 1, h: 100 });
     assert.deepEqual(settings({ size_x_cm: 'oops' }).paperSize(), { w: 10, h: 10 });

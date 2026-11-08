@@ -60,6 +60,7 @@ function defaultValues(): Record<string, unknown> {
         // Axis ranges are expressions (sliders allowed), resolved by resolveView.
         ...RANGE_DEFAULTS,
         axis_style: 'box',
+        graphAppearance: 'classic-square',
         // Polar treats function expressions as r(theta).
         coordinateSystem: 'cartesian',
         // Separate axis labels for polar mode so toggling Cartesian <-> Polar
@@ -140,6 +141,23 @@ export class SettingsManager {
         delete out.documentClose;
         out.v = SCHEMA_VERSION;
         return out;
+    }
+
+    /**
+     * Create a brand-new chart for the editor: starts with the Academic (4:3)
+     * preset as the default, leaving existing saved charts on their own presets.
+     */
+    static newChart(): SettingsManager {
+        const mgr = new SettingsManager();
+        mgr.setValue('graphAppearance', 'academic');
+        mgr.setValue('size_x_cm', 12);
+        mgr.setValue('size_y_cm', 9);
+        mgr.setValue('showLargeGrid', true);
+        mgr.setValue('showSmallGrid', false);
+        mgr.setValue('majorTickNum', 6);
+        mgr.setValue('gridSize', 5);
+        mgr.setValue('axis_style', 'box');
+        return mgr;
     }
 
     /**

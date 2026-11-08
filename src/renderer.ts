@@ -491,9 +491,10 @@ export class SVGRenderer {
         const titleH = String(cfg.title ?? '').trim() ? this.fontPx(TITLE_PT) * 1.25 : 0;
         const title = titleH ? titleH + pt(TITLE_GAP_PT) : 0;
         const middle = cfg.axisStyle === 'middle';
+        const yAxisAtLeft = !middle || v.xmin >= 0;
         const p: Padding = middle
             ? {
-                  left: TICK_LEN + pt(TICK_GAP_PT) + yTickW + pt(EDGE_PT),
+                  left: yAxisAtLeft ? TICK_LEN + pt(TICK_GAP_PT) + yTickW + pt(EDGE_PT) : Math.max(pt(EDGE_PT) + 8, lastX / 2),
                   bottom: TICK_LEN + pt(TICK_GAP_PT) + tickFs * 1.1 + pt(EDGE_PT),
                   right: Math.max(
                       lastX / 2 + pt(EDGE_PT),
@@ -956,7 +957,7 @@ export class SVGRenderer {
                 '0.25'
             );
         }
-        draw(tickValues(v.xmin, v.xmax, stepX), tickValues(v.ymin, v.ymax, stepY), '1', '0.5');
+        draw(tickValues(v.xmin, v.xmax, stepX), tickValues(v.ymin, v.ymax, stepY), '0.75', '0.35');
         this.attach(svg, g);
     }
 
@@ -1050,7 +1051,7 @@ export class SVGRenderer {
             // Box: four explicit border lines in the full-contrast text colour,
             // so the frame reads clearly in light and dark themes. Ticks are
             // mirrored on the top and right bars.
-            const border = { stroke: TEXT_NORMAL, 'stroke-width': this.compact ? '1' : '2', 'stroke-linecap': 'square' };
+            const border = { stroke: TEXT_NORMAL, 'stroke-width': this.compact ? '1' : '1.25', 'stroke-linecap': 'square' };
             g.appendChild(this.line(left, bottom, right, bottom, border));
             g.appendChild(this.line(left, top, right, top, border));
             g.appendChild(this.line(left, top, left, bottom, border));

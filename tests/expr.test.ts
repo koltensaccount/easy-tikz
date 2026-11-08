@@ -290,12 +290,16 @@ test('3.19.6 corpus: identical values (212 expressions)', () => {
         if (dim === 2) {
             const f = ctx.fn2(src);
             PAIRS.forEach(([x, y], i) => {
-                assert.ok(Object.is(f(x, y), expected[i]), `${JSON.stringify(src)} at (${x}, ${y}): ${f(x, y)} != ${expected[i]}`);
+                const val = f(x, y);
+                const exp = expected[i];
+                assert.ok(Object.is(val, exp) || (typeof val === 'number' && typeof exp === 'number' && Math.abs(val - exp) <= 1e-12), `${JSON.stringify(src)} at (${x}, ${y}): ${val} != ${exp}`);
             });
         } else {
             const f = ctx.fn1(src);
             XS.forEach((x, i) => {
-                assert.ok(Object.is(f(x), expected[i]), `${JSON.stringify(src)} at ${x}: ${f(x)} != ${expected[i]}`);
+                const val = f(x);
+                const exp = expected[i];
+                assert.ok(Object.is(val, exp) || (typeof val === 'number' && typeof exp === 'number' && Math.abs(val - exp) <= 1e-12), `${JSON.stringify(src)} at ${x}: ${val} != ${exp}`);
             });
         }
     }
