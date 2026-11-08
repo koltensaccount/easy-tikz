@@ -2,9 +2,9 @@ import { App, MarkdownView, Menu, Modal, Notice, Platform, TFile, loadMathJax } 
 import { cloneData, errorText, fitPixelScale, niceInterval } from './util';
 import { exportableSvg, svgToPng } from './svgExport';
 import { issueText, mergeViewErrors } from './issues';
-import { Annotation, AxisStyle, Function3DParameters, FunctionParameters, Parameter, RendererConfig, Tool } from './types';
+import { Annotation, Function3DParameters, FunctionParameters, Parameter, RendererConfig, Tool } from './types';
 import { RANGE_DEFAULTS, RangeKey, SettingsManager } from './settings';
-import { computeOriginBounds } from './appearance';
+import { centerOrigin } from './appearance';
 import { RenderLayout, SVGRenderer } from './renderer';
 import { MATH_REDRAW_LIMIT } from './mathlabel';
 import { SVG3DRenderer } from './renderer3d';
@@ -3238,64 +3238,22 @@ export class TikzModal extends Modal implements PanelHost {
         return keys.every((key) => String(this.settings.getValue(key) ?? '').trim() === RANGE_DEFAULTS[key]);
     }
 
-    /**
-     * Center origin (0, 0): places origin depending on axis_style:
-     * - 'middle': center of plotting area [-W/2, W/2], [-H/2, H/2]
-     * - 'box': bottom-left corner [0, W], [0, H]
-     * - 'axes': bottom-left corner [0, W], [0, H]
-     * For polar or 3D, origin is centered symmetrically.
-     * Preserves span, zoom, plotted data, annotations, and appearance preset.
-     * Guards against corrupting invalid or unresolved range expressions.
-     */
     private centerOrigin() {
-        this.dropPendingWheel();
-        let math: MathContext;
         try {
-            math = this.math();
+            const result = centerOrigin(this.settings, this.math());
+            if (result.error) {
+                this.flashStatus(`Cannot center origin: ${result.error}`);
+                return;
+            }
+            this.dropPendingWheel();
+            this.wheelView = null;
+            if (result.changed) {
+                this.chartPanel?.syncView();
+                this.requestUpdate();
+            }
         } catch (e) {
             this.flashStatus(`Cannot center origin: ${errorText(e)}`);
-            return;
         }
-
-        const res = this.settings.resolveView(math);
-        if (res.errors && res.errors.length > 0) {
-            this.flashStatus(`Cannot center origin: ${res.errors[0]}`);
-            return;
-        }
-
-        const view = res.view;
-        const ok = (a: number, b: number) => Number.isFinite(a) && Number.isFinite(b) && a < b;
-        if (!ok(view.xmin, view.xmax) || !ok(view.ymin, view.ymax)) {
-            this.flashStatus('Cannot center origin: invalid range bounds');
-            return;
-        }
-        if (this.is3D() && (view.zmin === undefined || view.zmax === undefined || !ok(view.zmin, view.zmax))) {
-            this.flashStatus('Cannot center origin: invalid 3D z bounds');
-            return;
-        }
-
-        const axisStyle = (this.settings.getValue('axis_style') as AxisStyle) || 'box';
-        const bounds = computeOriginBounds(axisStyle, view, {
-            isPolar: this.isPolar(),
-            is3D: this.is3D(),
-        });
-
-        const spanX = view.xmax - view.xmin;
-        const spanY = view.ymax - view.ymin;
-
-        this.settings.setValue('xmin', formatBound(bounds.xmin, spanX));
-        this.settings.setValue('xmax', formatBound(bounds.xmax, spanX));
-        this.settings.setValue('ymin', formatBound(bounds.ymin, spanY));
-        this.settings.setValue('ymax', formatBound(bounds.ymax, spanY));
-
-        if (this.is3D() && bounds.zmin !== undefined && bounds.zmax !== undefined && view.zmin !== undefined && view.zmax !== undefined) {
-            const spanZ = view.zmax - view.zmin;
-            this.settings.setValue('zmin', formatBound(bounds.zmin, spanZ));
-            this.settings.setValue('zmax', formatBound(bounds.zmax, spanZ));
-        }
-
-        this.chartPanel?.syncView();
-        this.requestUpdate();
     }
 
     private resetRanges() {

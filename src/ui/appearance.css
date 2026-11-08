@@ -9,12 +9,13 @@
     margin-bottom: 8px;
 }
 
-.etz-appearance-trigger {
+button.etz-appearance-trigger {
     display: flex;
     align-items: center;
     justify-content: space-between;
     width: 100%;
-    min-height: 38px;
+    height: auto;
+    min-height: 34px;
     padding: 6px 12px;
     border: 1px solid var(--background-modifier-border);
     border-radius: var(--etz-radius-m);
@@ -77,8 +78,8 @@
 
 .etz-popover.etz-appearance-popover {
     width: 390px;
-    max-width: min(92vw, 420px);
-    max-height: min(85vh, 560px);
+    max-width: calc(100vw - 24px);
+    max-height: min(calc(100vh - 24px), 590px);
     display: flex;
     flex-direction: column;
     padding: 12px;
@@ -103,96 +104,65 @@
 .etz-appearance-gallery {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-auto-rows: max-content;
     gap: 8px;
+    min-height: 0;
     overflow-y: auto;
-    padding: 2px;
+    padding: 3px;
 }
 
-.etz-preset-card {
-    display: flex;
-    flex-direction: column;
-    padding: 6px;
-    border: 1px solid var(--background-modifier-border);
-    border-radius: var(--etz-radius-l);
-    background-color: var(--background-primary-alt);
-    cursor: pointer;
-    text-align: left;
-    box-shadow: none;
-    transition: border-color var(--etz-transition), background-color var(--etz-transition), transform 0.1s ease;
+/* The built-in examples supply the tile layout and thumbnail sizing. */
+.etz-appearance-gallery .etz-build-thumb {
+    height: 68px;
 }
 
-.etz-preset-card:hover {
-    border-color: var(--etz-accent-border);
-    background-color: var(--background-modifier-hover);
-    box-shadow: none;
+.etz-appearance-gallery button.etz-preset-card.is-custom {
+    display: grid;
+    grid-column: 1 / -1;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-rows: 1fr 1fr;
+    column-gap: 12px;
+    min-height: 0;
 }
 
-.etz-preset-card:focus-visible {
-    box-shadow: var(--etz-focus-ring);
+.etz-appearance-gallery .is-custom .etz-build-thumb {
+    grid-row: span 2;
+    height: 54px;
 }
 
-.etz-preset-card.is-selected {
+.etz-appearance-gallery .is-custom .etz-preset-title {
+    align-self: end;
+}
+
+.etz-appearance-gallery .is-custom .etz-build-example-desc {
+    align-self: start;
+}
+
+.etz-appearance-gallery .etz-preset-title {
+    justify-content: space-between;
+}
+
+.etz-appearance-gallery button.etz-preset-card.is-selected {
     border-color: var(--interactive-accent);
     background-color: color-mix(in srgb, var(--interactive-accent) 10%, var(--background-primary-alt));
-    box-shadow: 0 0 0 1px var(--interactive-accent);
 }
 
-.etz-preset-thumb {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    height: 72px;
-    width: 100%;
-    padding: 4px;
-    border-radius: var(--etz-radius-m);
-    background-color: var(--background-primary);
-    overflow: hidden;
-    pointer-events: none;
+.etz-appearance-gallery button.etz-preset-card:focus-visible {
+    outline: 2px solid var(--interactive-accent);
+    outline-offset: 1px;
 }
 
-.etz-preset-thumb svg {
-    max-width: 100%;
-    max-height: 100%;
-    display: block;
-}
-
-.etz-preset-meta {
-    margin-top: 6px;
-    padding: 0 2px;
-    pointer-events: none;
-}
-
-.etz-preset-title-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 4px;
-}
-
-.etz-preset-name {
-    font-size: 12px;
-    font-weight: 600;
-    color: var(--text-normal);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-.etz-preset-ratio {
-    font-size: 10px;
-    font-weight: 600;
-    padding: 1px 4px;
-    border-radius: 4px;
-    background-color: var(--background-secondary-alt);
-    color: var(--text-muted);
+.etz-appearance-gallery .etz-build-example-desc {
     flex-shrink: 0;
 }
 
-.etz-preset-subtitle {
-    margin-top: 2px;
-    font-size: 11px;
-    color: var(--text-muted);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+/* Keep sample curves legible even when a portrait thumbnail scales down. */
+.etz-appearance-gallery .etz-curves path {
+    vector-effect: non-scaling-stroke;
+    stroke-width: 1.4px;
+}
+
+.etz-appearance-gallery .etz-curves path[stroke-dasharray] {
+    stroke-width: 0.9px;
+    stroke-dasharray: 3 2;
 }

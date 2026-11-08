@@ -9,13 +9,15 @@ import {
     PRESET_SAMPLES,
     AppearancePresetId,
     applyPreset,
-    computeOriginBounds,
+    centerOrigin,
     createPresetPreviewSettings,
     detectPreset,
     getPresetById,
     matchesPreset,
 } from '../src/appearance';
 import { migrateSettings } from '../src/migrate';
+import { parseChartText } from '../src/text/parse';
+import { printChartText } from '../src/text/print';
 
 test('appearance presets: all 6 presets are defined with required proportions', () => {
     assert.equal(GRAPH_APPEARANCE_PRESETS.length, 6);
@@ -183,68 +185,6 @@ test('appearance presets: existing / legacy charts retain original appearance', 
     assert.equal(detectPreset(mgr), 'classic-square');
 });
 
-test('origin center: mathematical centering preserves span and zoom', () => {
-    // Range bounds helper matching modal.ts centerOrigin
-    function centerOrigin(ranges: { xmin: number; xmax: number; ymin: number; ymax: number }) {
-        const w = ranges.xmax - ranges.xmin;
-        const h = ranges.ymax - ranges.ymin;
-        return {
-            xmin: -w / 2,
-            xmax: w / 2,
-            ymin: -h / 2,
-            ymax: h / 2,
-            w,
-            h,
-        };
-    }
-
-    // Prompt example: x: -0.5 to 10, y: -0.5 to 5
-    const ex = centerOrigin({ xmin: -0.5, xmax: 10, ymin: -0.5, ymax: 5 });
-    assert.equal(ex.xmin, -5.25);
-    assert.equal(ex.xmax, 5.25);
-    assert.equal(ex.ymin, -2.75);
-    assert.equal(ex.ymax, 2.75);
-    assert.equal(ex.w, 10.5);
-    assert.equal(ex.h, 5.5);
-
-    // Negative range: x: -10 to -2
-    const neg = centerOrigin({ xmin: -10, xmax: -2, ymin: 1, ymax: 5 });
-    assert.equal(neg.xmin, -4);
-    assert.equal(neg.xmax, 4);
-    assert.equal(neg.ymin, -2);
-    assert.equal(neg.ymax, 2);
-    assert.equal(neg.w, 8);
-    assert.equal(neg.h, 4);
-
-    // Idempotency: clicking again produces identical bounds
-    const again = centerOrigin({ xmin: ex.xmin, xmax: ex.xmax, ymin: ex.ymin, ymax: ex.ymax });
-    assert.equal(again.xmin, -5.25);
-    assert.equal(again.xmax, 5.25);
-    assert.equal(again.ymin, -2.75);
-    assert.equal(again.ymax, 2.75);
-});
-
-test('origin center: expression bounds resolve and center properly', () => {
-    const s = SettingsManager.newChart();
-    s.setValue('xmin', '0');
-    s.setValue('xmax', '2*pi');
-    s.setValue('ymin', '-1');
-    s.setValue('ymax', '1');
-
-    const math = s.createMathContext();
-    const { view } = s.resolveView(math);
-    const w = view.xmax - view.xmin;
-    const h = view.ymax - view.ymin;
-
-    near(w, 2 * Math.PI, 1e-4);
-    near(h, 2, 1e-4);
-
-    const centeredXmin = -w / 2;
-    const centeredXmax = w / 2;
-    near(centeredXmin, -Math.PI, 1e-4);
-    near(centeredXmax, Math.PI, 1e-4);
-});
-
 test('export proportions: canvas and TikZ export reflect preset aspect ratios', () => {
     for (const preset of GRAPH_APPEARANCE_PRESETS) {
         const s = new SettingsManager();
@@ -263,106 +203,95 @@ test('export proportions: canvas and TikZ export reflect preset aspect ratios', 
     }
 });
 
-test('context-aware origin bounds: middle centers (0,0) with exact span preserved', () => {
-    // Initial span: W = 10 - (-0.5) = 10.5, H = 5 - (-0.5) = 5.5
-    const view = { xmin: -0.5, xmax: 10, ymin: -0.5, ymax: 5 };
-    const res = computeOriginBounds('middle', view);
+test('Center Origin applies each axis style and preserves all other chart settings', () => {
+    for (const [style, expected] of [
+        ['middle', ['-5.25', '5.25', '-2.75', '2.75']],
+        ['box', ['0', '10.5', '0', '5.5']],
+        ['axes', ['0', '10.5', '0', '5.5']],
+    ] as const) {
+        const chart = SettingsManager.newChart();
+        chart.setValue('axis_style', style);
+        chart.setValue('functions', [{ name: 'f1', expression: 'sin(x)' }]);
+        chart.setValue('annotations', [{ text: 'Sample' }]);
+        const before = chart.serialize();
+        const active = detectPreset(chart);
+        const [xmin, xmax, ymin, ymax] = expected;
 
-    assert.equal(res.xmin, -5.25);
-    assert.equal(res.xmax, 5.25);
-    assert.equal(res.ymin, -2.75);
-    assert.equal(res.ymax, 2.75);
-    assert.equal(res.xmax - res.xmin, 10.5);
-    assert.equal(res.ymax - res.ymin, 5.5);
-
-    // Idempotency: centering again gives the exact same bounds
-    const res2 = computeOriginBounds('middle', res);
-    assert.equal(res2.xmin, -5.25);
-    assert.equal(res2.xmax, 5.25);
-    assert.equal(res2.ymin, -2.75);
-    assert.equal(res2.ymax, 2.75);
+        assert.deepEqual(centerOrigin(chart), { changed: true });
+        assert.deepEqual(chart.serialize(), { ...before, xmin, xmax, ymin, ymax });
+        assert.equal(detectPreset(chart), active);
+        assert.deepEqual(centerOrigin(chart), { changed: false });
+    }
 });
 
-test('context-aware origin bounds: box places (0,0) at bottom-left corner with exact span preserved', () => {
-    // Initial span: W = 10.5, H = 5.5
-    const view = { xmin: -0.5, xmax: 10, ymin: -0.5, ymax: 5 };
-    const res = computeOriginBounds('box', view);
+test('Center Origin keeps expression and tiny decimal spans at full precision', () => {
+    const chart = SettingsManager.newChart();
+    chart.setValue('axis_style', 'middle');
+    chart.setValue('parameters', [{ name: 'a', value: 2, min: 0, max: 5, step: 1 }]);
+    chart.setValue('xmin', '0');
+    chart.setValue('xmax', 'a*pi');
+    chart.setValue('ymin', '0');
+    chart.setValue('ymax', '3e-20');
 
-    assert.equal(res.xmin, 0);
-    assert.equal(res.xmax, 10.5);
-    assert.equal(res.ymin, 0);
-    assert.equal(res.ymax, 5.5);
-    assert.equal(res.xmax - res.xmin, 10.5);
-    assert.equal(res.ymax - res.ymin, 5.5);
-
-    // Idempotency
-    const res2 = computeOriginBounds('box', res);
-    assert.equal(res2.xmin, 0);
-    assert.equal(res2.xmax, 10.5);
-    assert.equal(res2.ymin, 0);
-    assert.equal(res2.ymax, 5.5);
+    assert.deepEqual(centerOrigin(chart), { changed: true });
+    const { view, errors } = chart.resolveView(chart.createMathContext());
+    assert.deepEqual(errors, []);
+    assert.equal(view.xmin, -Math.PI);
+    assert.equal(view.xmax - view.xmin, 2 * Math.PI);
+    assert.equal(view.ymax - view.ymin, 3e-20);
+    assert.deepEqual(centerOrigin(chart), { changed: false });
 });
 
-test('context-aware origin bounds: axes places (0,0) at bottom-left corner like box', () => {
-    // Initial span: W = 8, H = 8
-    const view = { xmin: -2, xmax: 6, ymin: -3, ymax: 5 };
-    const res = computeOriginBounds('axes', view);
-
-    assert.equal(res.xmin, 0);
-    assert.equal(res.xmax, 8);
-    assert.equal(res.ymin, 0);
-    assert.equal(res.ymax, 8);
-    assert.equal(res.xmax - res.xmin, 8);
-    assert.equal(res.ymax - res.ymin, 8);
-
-    // Idempotency
-    const res2 = computeOriginBounds('axes', res);
-    assert.equal(res2.xmin, 0);
-    assert.equal(res2.xmax, 8);
-    assert.equal(res2.ymin, 0);
-    assert.equal(res2.ymax, 8);
+test('Center Origin rejects invalid active bounds without modifying the chart', () => {
+    for (const [key, expression] of [
+        ['xmin', 'unknown_name'],
+        ['ymax', '1e999'],
+        ['ymin', '6'],
+        ['xmin', '-1e308'],
+        ['zmax', 'unknown_name'],
+    ]) {
+        const chart = SettingsManager.newChart();
+        chart.setValue('dimension', key === 'zmax');
+        if (expression === '-1e308') chart.setValue('xmax', '1e308');
+        chart.setValue(key, expression);
+        const before = chart.serialize();
+        const result = centerOrigin(chart);
+        assert.equal(result.changed, false);
+        assert.ok(result.error);
+        assert.deepEqual(chart.serialize(), before);
+    }
 });
 
-test('context-aware origin bounds: negative offset ranges', () => {
-    const view = { xmin: -10, xmax: -2, ymin: 1, ymax: 5 }; // W = 8, H = 4
+test('Center Origin centers polar and 3D ranges and leaves zoom and inactive bounds alone', () => {
+    for (const is3D of [false, true]) {
+        const chart = SettingsManager.newChart();
+        chart.setValue('dimension', is3D);
+        chart.setValue('coordinateSystem', 'polar');
+        chart.setValue('zmin', is3D ? '2' : 'unknown_name');
+        chart.setValue('zmax', '8');
+        chart.setValue('zoom3D', 2);
+        const before = chart.serialize();
 
-    const mid = computeOriginBounds('middle', view);
-    assert.equal(mid.xmin, -4);
-    assert.equal(mid.xmax, 4);
-    assert.equal(mid.ymin, -2);
-    assert.equal(mid.ymax, 2);
-
-    const bx = computeOriginBounds('box', view);
-    assert.equal(bx.xmin, 0);
-    assert.equal(bx.xmax, 8);
-    assert.equal(bx.ymin, 0);
-    assert.equal(bx.ymax, 4);
-
-    const ax = computeOriginBounds('axes', view);
-    assert.equal(ax.xmin, 0);
-    assert.equal(ax.xmax, 8);
-    assert.equal(ax.ymin, 0);
-    assert.equal(ax.ymax, 4);
+        assert.deepEqual(centerOrigin(chart), { changed: true });
+        assert.deepEqual(chart.serialize(), {
+            ...before,
+            xmin: '-5.25', xmax: '5.25', ymin: '-2.75', ymax: '2.75',
+            ...(is3D ? { zmin: '-3', zmax: '3' } : {}),
+        });
+    }
 });
 
-test('context-aware origin bounds: polar always centers origin', () => {
-    const view = { xmin: 0, xmax: 10, ymin: 0, ymax: 10 };
-    const res = computeOriginBounds('box', view, { isPolar: true });
-    assert.equal(res.xmin, -5);
-    assert.equal(res.xmax, 5);
-    assert.equal(res.ymin, -5);
-    assert.equal(res.ymax, 5);
-});
-
-test('context-aware origin bounds: 3D centers x, y, and z', () => {
-    const view = { xmin: 0, xmax: 10, ymin: 0, ymax: 10, zmin: 2, zmax: 8 };
-    const res = computeOriginBounds('box', view, { is3D: true });
-    assert.equal(res.xmin, -5);
-    assert.equal(res.xmax, 5);
-    assert.equal(res.ymin, -5);
-    assert.equal(res.ymax, 5);
-    assert.equal(res.zmin, -3);
-    assert.equal(res.zmax, 3);
+test('selecting Custom stays active even when the settings match a named preset', () => {
+    const chart = SettingsManager.newChart();
+    const before = chart.serialize();
+    applyPreset(chart, 'custom');
+    assert.deepEqual(chart.serialize(), { ...before, graphAppearance: 'custom' });
+    assert.equal(detectPreset(SettingsManager.fromJSON(chart.serialize())), 'custom');
+    const text = parseChartText(printChartText(chart.serialize()));
+    assert.deepEqual(text.problems, []);
+    assert.equal(detectPreset(SettingsManager.fromJSON(text.data)), 'custom');
+    applyPreset(chart, 'academic');
+    assert.equal(detectPreset(chart), 'academic');
 });
 
 test('visual preset picker: all 7 preset samples are defined with representative functions', () => {
@@ -379,28 +308,31 @@ test('visual preset picker: all 7 preset samples are defined with representative
         'custom',
     ]);
 
-    const signals = PRESET_SAMPLES.find((s) => s.id === 'signals-systems');
-    assert.ok(signals);
-    assert.equal(signals!.ratio, '5:2');
-    assert.ok(signals!.expression.includes('cos'), 'Signals & Systems sample uses waveform expression');
-
-    const clean = PRESET_SAMPLES.find((s) => s.id === 'clean-cartesian');
-    assert.ok(clean);
-    assert.equal(clean!.ratio, '3:2');
-    assert.ok(clean!.expression.includes('x^3'), 'Clean Cartesian sample uses cubic crossing at origin');
-
-    // Preview settings instantiation for all presets
     for (const sample of PRESET_SAMPLES) {
-        const s = createPresetPreviewSettings(sample.id);
-        const funcs = (s.getValue('functions') as Array<{ expression: string }>) || [];
-        assert.ok(funcs.length > 0, `Preset ${sample.id} has preview function`);
-        assert.ok(funcs[0].expression.length > 0, `Preset ${sample.id} has non-empty expression`);
+        const settings = createPresetPreviewSettings(sample.id);
+        const math = settings.createMathContext();
+        const config = settings.toRendererConfig(math);
+        assert.deepEqual(settings.resolveView(math).errors, []);
+        assert.ok(config.functions!.length || config.tools!.length, `Preset ${sample.id} has visible content`);
+        if (sample.id !== 'custom') assert.equal(detectPreset(settings), sample.id);
     }
+    const signals = createPresetPreviewSettings('signals-systems').toRendererConfig();
+    assert.ok(signals.functions![0].expression.includes('cos'));
+    assert.equal(signals.functions![0].fill, true);
+    const clean = createPresetPreviewSettings('clean-cartesian').toRendererConfig();
+    assert.ok(clean.functions![0].expression.includes('x^3'));
+    assert.equal(clean.functions![0].tangent, true);
 
-    // Custom preview settings preserves existing functions
+    // Custom uses the current style on an independent sample.
     const customMgr = new SettingsManager();
     customMgr.setValue('functions', [{ name: 'f1', expression: 'tan(x)', color: 'red' }]);
+    customMgr.setValue('size_x_cm', 18);
+    customMgr.setValue('axis_style', 'axes');
+    customMgr.setValue('xmin', 'broken(');
     const customPreview = createPresetPreviewSettings('custom', customMgr);
+    assert.equal(customPreview.paperSize().w, 18);
+    assert.equal(customPreview.getValue('axis_style'), 'axes');
+    assert.deepEqual(customPreview.resolveView(customPreview.createMathContext()).errors, []);
     const customFuncs = customPreview.getValue('functions') as Array<{ expression: string }>;
-    assert.equal(customFuncs[0].expression, 'tan(x)');
+    assert.equal(customFuncs[0].expression, 'sin(x)');
 });

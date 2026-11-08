@@ -16,7 +16,7 @@ import { ValidateResult, fmtNum } from '../mathcontext';
 import { ChartExample, EXAMPLES, Recipe, RecipeContext, newId, nextFunctionName, nextToolName, recipes } from '../migrate';
 import { BUILT_IN_2D, BUILT_IN_3D } from '../templates';
 import { RANGE_DEFAULTS, RangeKey, SettingsManager } from '../settings';
-import { SVGRenderer } from '../renderer';
+import { render2DThumbnail } from './thumbnail';
 import { SVG3DRenderer } from '../renderer3d';
 import type { SceneIssue } from '../scene';
 import { PanelHost } from './host';
@@ -83,16 +83,6 @@ const COLLAPSE_THRESHOLD = 4;
 /** Length of the card flash after a click on its object in the preview (matches .is-canvas-flash in drag.css). */
 const FLASH_MS = 600;
 
-/**
- * Thumbnail rendering: the plot area is cropped out of a chart rendered at
- * this plot size (about the 140 x 56 tile aspect). The padding mirrors the
- * renderer's defaults; renderer.layout reports the real plot rectangle.
- */
-const THUMB_PLOT_W = 400;
-const THUMB_PLOT_H = 160;
-const THUMB_PAD_X = 85;
-const THUMB_PAD_Y = 90;
-
 /** Menu headings per recipe section, and the icon every item of that section gets. */
 const SECTION_ICONS: Record<string, string> = {
     Functions: 'line-chart',
@@ -139,23 +129,6 @@ function inDimension(tool: Tool, is3D: boolean): boolean {
 function shortText(text: string, max = 24): string {
     const t = text.trim();
     return t.length > max ? `${t.slice(0, max - 1)}...` : t;
-}
-
-/** Plot-area crop of a 2D example: curves and fills only (CSS hides the text). */
-function render2DThumbnail(example: ChartExample): SVGSVGElement {
-    const settings = SettingsManager.fromJSON(cloneData(example.data));
-    const math = settings.createMathContext();
-    const config = settings.toRendererConfig(math);
-    config.width = THUMB_PLOT_W + THUMB_PAD_X;
-    config.height = THUMB_PLOT_H + THUMB_PAD_Y;
-    config.title = '';
-    config.showAxisLabels = false;
-    const renderer = new SVGRenderer(config, { math, quality: 'draft' });
-    const svg = renderer.render() as SVGSVGElement;
-    const plot = renderer.layout ? renderer.layout.plot : null;
-    // A 2 px margin keeps box-style axes on the plot border visible.
-    if (plot) svg.setAttribute('viewBox', `${plot.x - 2} ${plot.y - 2} ${plot.w + 4} ${plot.h + 4}`);
-    return svg;
 }
 
 function render3DThumbnail(example: ChartExample): SVGSVGElement | null {
@@ -206,7 +179,7 @@ function exampleThumbnail(example: ChartExample): SVGSVGElement | null {
     let svg = THUMBNAILS.get(example.id) ?? null;
     if (!svg) {
         try {
-            svg = example.is3D ? render3DThumbnail(example) : render2DThumbnail(example);
+            svg = example.is3D ? render3DThumbnail(example) : render2DThumbnail(SettingsManager.fromJSON(cloneData(example.data)));
         } catch {
             svg = null;
         }

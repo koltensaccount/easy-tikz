@@ -7,7 +7,7 @@
 import { setIcon } from 'obsidian';
 import { MathContext, ValidateResult } from '../mathcontext';
 import { RANGE_DEFAULTS, RangeKey, SettingsManager } from '../settings';
-import { SVGRenderer } from '../renderer';
+import { render2DThumbnail } from './thumbnail';
 import {
     AppearancePresetId,
     PRESET_SAMPLES,
@@ -22,6 +22,7 @@ import {
     ExprInputHandle,
     FieldLayoutHandle,
     LiveSliderHandle,
+    PopoverHandle,
     SegmentedHandle,
     TextInputHandle,
     chip,
@@ -105,53 +106,23 @@ function renderPresetPreview(
     presetId: AppearancePresetId,
     currentSettings?: SettingsManager
 ): SVGSVGElement | null {
-    if (typeof document === 'undefined') return null;
+    const cached = previewCache.get(presetId);
+    if (cached) return cached.cloneNode(true) as SVGSVGElement;
 
-    if (presetId !== 'custom') {
-        const cached = previewCache.get(presetId);
-        if (cached) return cached.cloneNode(true) as SVGSVGElement;
-    }
+    try {
+        const settings = createPresetPreviewSettings(presetId, currentSettings);
+        const { w, h } = settings.paperSize();
+        const svg = render2DThumbnail(settings, w / h);
+        svg.removeAttribute('width');
+        svg.removeAttribute('height');
+        svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
 
-    const s = createPresetPreviewSettings(presetId, currentSettings);
-    const math = s.createMathContext();
-    const config = s.toRendererConfig(math);
-
-    const wCm = Math.max(1, Number(s.getValue('size_x_cm')) || 10);
-    const hCm = Math.max(1, Number(s.getValue('size_y_cm')) || 10);
-    const ratio = wCm / hCm;
-
-    const longSide = 240;
-    let widthPx = ratio >= 1 ? longSide : Math.round(longSide * ratio);
-    let heightPx = ratio >= 1 ? Math.round(longSide / ratio) : longSide;
-
-    if (heightPx < 125) {
-        const factor = 125 / heightPx;
-        heightPx = 125;
-        widthPx = Math.round(widthPx * factor);
-    }
-    if (widthPx < 205) {
-        const factor = 205 / widthPx;
-        widthPx = 205;
-        heightPx = Math.round(heightPx * factor);
-    }
-
-    config.width = widthPx;
-    config.height = heightPx;
-    config.title = '';
-
-    const renderer = new SVGRenderer(config, { math, quality: 'draft' });
-    const svg = renderer.render() as SVGSVGElement;
-    svg.removeAttribute('width');
-    svg.removeAttribute('height');
-    svg.setAttribute('viewBox', `0 0 ${widthPx} ${heightPx}`);
-    svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
-
-    if (presetId !== 'custom') {
+        if (presetId === 'custom') return svg;
         previewCache.set(presetId, svg);
         return svg.cloneNode(true) as SVGSVGElement;
+    } catch {
+        return null;
     }
-
-    return svg;
 }
 
 export function createChartPanel(parent: HTMLElement, host: PanelHost, opts: ChartPanelOptions): ChartPanelHandle {
@@ -165,6 +136,7 @@ export function createChartPanel(parent: HTMLElement, host: PanelHost, opts: Cha
     let elevation: LiveSliderHandle | null = null;
     let azimuth: LiveSliderHandle | null = null;
     let axisStyle: SegmentedHandle<string> | null = null;
+    let appearancePicker: PopoverHandle | null = null;
     let appearanceTrigger: HTMLButtonElement | null = null;
     let appearanceTriggerName: HTMLElement | null = null;
     let appearanceTriggerRatio: HTMLElement | null = null;
@@ -174,9 +146,7 @@ export function createChartPanel(parent: HTMLElement, host: PanelHost, opts: Cha
     let heightSlider: LiveSliderHandle | null = null;
 
     const getPresetRatioText = (presetId: AppearancePresetId): string => {
-        if (presetId === 'custom') return 'Custom';
-        const preset = getPresetById(presetId);
-        return preset ? preset.ratio : 'Custom';
+        return getPresetById(presetId)?.ratio ?? 'Variable';
     };
 
     const getPresetDisplayName = (presetId: AppearancePresetId): string => {
@@ -209,7 +179,12 @@ export function createChartPanel(parent: HTMLElement, host: PanelHost, opts: Cha
     };
 
     const openAppearancePicker = (anchor: HTMLElement) => {
-        popover(anchor, host, {
+        if (appearancePicker?.isOpen()) {
+            appearancePicker.close();
+            return;
+        }
+        appearancePicker = popover(anchor, host, {
+            onClose: () => { appearancePicker = null; },
             label: 'Graph appearance presets',
             align: 'start',
             placement: 'below',
@@ -233,34 +208,32 @@ export function createChartPanel(parent: HTMLElement, host: PanelHost, opts: Cha
                 for (const sample of PRESET_SAMPLES) {
                     const isSelected = sample.id === currentPresetId;
                     const card = gallery.createEl('button', {
-                        cls: ['etz-preset-card', isSelected ? 'is-selected' : ''].filter(Boolean).join(' '),
+                        cls: ['etz-build-example etz-preset-card', sample.id === 'custom' ? 'is-custom' : '', isSelected ? 'is-selected' : ''].filter(Boolean).join(' '),
                         attr: {
                             type: 'button',
-                            'aria-label': `${sample.title} (${sample.ratio})`,
                             'aria-pressed': isSelected ? 'true' : 'false',
                         },
                     });
 
-                    // Mini preview thumbnail
-                    const thumb = card.createDiv({ cls: 'etz-preset-thumb' });
+                    const thumb = card.createDiv({ cls: 'etz-build-thumb', attr: { 'aria-hidden': 'true' } });
                     const svg = renderPresetPreview(sample.id, settings);
                     if (svg) {
                         thumb.appendChild(svg);
                     } else {
-                        thumb.createSpan({ cls: 'etz-preset-placeholder', text: sample.ratio });
+                        thumb.addClass('is-fallback');
                     }
 
-                    // Metadata
-                    const meta = card.createDiv({ cls: 'etz-preset-meta' });
-                    const titleRow = meta.createDiv({ cls: 'etz-preset-title-row' });
-                    titleRow.createSpan({ cls: 'etz-preset-name', text: sample.title });
-                    titleRow.createSpan({ cls: 'etz-preset-ratio', text: sample.ratio });
-                    meta.createDiv({ cls: 'etz-preset-subtitle', text: sample.subtitle });
+                    const title = card.createDiv({ cls: 'etz-build-example-title etz-preset-title' });
+                    title.createSpan({ text: sample.title });
+                    title.createSpan({ cls: 'etz-build-example-tag', text: sample.ratio });
+                    card.createDiv({ cls: 'etz-build-example-desc', text: sample.subtitle });
 
                     card.addEventListener('click', () => {
-                        applyPreset(settings, sample.id);
-                        syncAppearanceControls();
-                        host.requestUpdate();
+                        if (!isSelected) {
+                            applyPreset(settings, sample.id);
+                            syncAppearanceControls();
+                            host.requestUpdate();
+                        }
                         self.close();
                     });
                 }
@@ -279,6 +252,7 @@ export function createChartPanel(parent: HTMLElement, host: PanelHost, opts: Cha
                 type: 'button',
                 'aria-label': `Graph appearance: ${getPresetDisplayName(active)} (${getPresetRatioText(active)})`,
                 'aria-haspopup': 'dialog',
+                'aria-expanded': 'false',
             },
         });
 
@@ -611,6 +585,7 @@ export function createChartPanel(parent: HTMLElement, host: PanelHost, opts: Cha
         unregister = [];
         ranges.forEach((h) => h.destroy());
         ranges.clear();
+        appearancePicker?.close();
         appearanceTrigger = null;
         appearanceTriggerName = null;
         appearanceTriggerRatio = null;

@@ -3,8 +3,11 @@
  * densities and grid configurations (Academic 4:3, Wide 16:9, Signals & Systems 5:2,
  * Clean Cartesian 3:2, Portrait 3:4, Classic Square 1:1, and Custom).
  */
-import { AxisStyle } from './types';
+import { AxisStyle, FunctionParameters, Tool } from './types';
 import { SettingsManager } from './settings';
+import { MathContext } from './mathcontext';
+import { EXAMPLES } from './migrate';
+import { cloneData } from './util';
 
 export type AppearancePresetId =
     | 'academic'
@@ -156,7 +159,8 @@ export function matchesPreset(preset: AppearancePreset, settings: SettingsManage
  */
 export function detectPreset(settings: SettingsManager): AppearancePresetId {
     const explicit = settings.getValue('graphAppearance');
-    if (typeof explicit === 'string' && explicit !== 'custom') {
+    if (explicit === 'custom') return 'custom';
+    if (typeof explicit === 'string') {
         const found = getPresetById(explicit);
         if (found && matchesPreset(found, settings)) return found.id;
     }
@@ -236,161 +240,95 @@ export function computeOriginBounds(
     return res;
 }
 
+/**
+ * Reposition the active ranges as a single edit. Fallback ranges are useful
+ * for drawing, but must never replace a user's unresolved expression.
+ */
+export function centerOrigin(
+    settings: SettingsManager,
+    math: MathContext = settings.createMathContext()
+): { changed: boolean; error?: string } {
+    math.setParams(settings.mathContextInput().parameters ?? []);
+    const is3D = settings.getValue('dimension') === true;
+    const isPolar = !is3D && settings.getValue('coordinateSystem') === 'polar';
+    const { view, errors } = settings.resolveView(math);
+    const error = errors.find((message) => is3D || !message.startsWith('z'));
+    if (error) return { changed: false, error };
+
+    const style = settings.getValue<AxisStyle>('axis_style');
+    const bounds = computeOriginBounds(style, view, { isPolar, is3D });
+    const entries = Object.entries(bounds) as Array<[keyof typeof bounds, number]>;
+    if (entries.some(([, value]) => !Number.isFinite(value)) ||
+        bounds.xmin >= bounds.xmax || bounds.ymin >= bounds.ymax ||
+        (bounds.zmin !== undefined && bounds.zmax !== undefined && bounds.zmin >= bounds.zmax)) {
+        return { changed: false, error: 'Range is too large or too small to center' };
+    }
+
+    let changed = false;
+    for (const [key, value] of entries) {
+        if (value === view[key]) continue;
+        // Shortest round-trippable number. Display rounding can shrink the span
+        // of an expression (or even turn a tiny positive span into zero).
+        settings.setValue(key, String(value));
+        changed = true;
+    }
+    return { changed };
+}
+
 export interface PresetSampleDefinition {
     id: AppearancePresetId;
     title: string;
     ratio: string;
     subtitle: string;
-    xmin: number;
-    xmax: number;
-    ymin: number;
-    ymax: number;
-    expression: string;
-    color: string;
-    thickness: 'thin' | 'normal' | 'thick' | 'very_thick';
+    example?: string;
 }
 
 export const PRESET_SAMPLES: readonly PresetSampleDefinition[] = [
-    {
-        id: 'academic',
-        title: 'Academic',
-        ratio: '4:3',
-        subtitle: 'Balanced · Box · Grid',
-        xmin: -3,
-        xmax: 3,
-        ymin: -1,
-        ymax: 5,
-        expression: '0.5*x^2',
-        color: 'blue',
-        thickness: 'thick',
-    },
-    {
-        id: 'wide',
-        title: 'Wide',
-        ratio: '16:9',
-        subtitle: 'Presentation · Box · Grid',
-        xmin: -5,
-        xmax: 5,
-        ymin: -2,
-        ymax: 2,
-        expression: '1.2*cos(x)',
-        color: 'teal',
-        thickness: 'thick',
-    },
-    {
-        id: 'signals-systems',
-        title: 'Signals & Systems',
-        ratio: '5:2',
-        subtitle: 'Waveform · Middle axes',
-        xmin: -5,
-        xmax: 5,
-        ymin: -1.5,
-        ymax: 1.5,
-        expression: 'exp(-0.35*abs(x)) * cos(2.5*x)',
-        color: 'blue',
-        thickness: 'thick',
-    },
-    {
-        id: 'clean-cartesian',
-        title: 'Clean Cartesian',
-        ratio: '3:2',
-        subtitle: 'Origin crossing · Minimal',
-        xmin: -3,
-        xmax: 3,
-        ymin: -3,
-        ymax: 3,
-        expression: '0.4*(x^3 - 3*x)',
-        color: 'purple',
-        thickness: 'thick',
-    },
-    {
-        id: 'portrait',
-        title: 'Portrait',
-        ratio: '3:4',
-        subtitle: 'Vertical · Box · Grid',
-        xmin: -2,
-        xmax: 2,
-        ymin: -4,
-        ymax: 4,
-        expression: '0.6*x^3',
-        color: 'orange',
-        thickness: 'thick',
-    },
-    {
-        id: 'classic-square',
-        title: 'Classic Square',
-        ratio: '1:1',
-        subtitle: 'Original 1:1 · Box',
-        xmin: -3,
-        xmax: 3,
-        ymin: -3,
-        ymax: 3,
-        expression: '2.5 - 0.5*x^2',
-        color: 'blue',
-        thickness: 'thick',
-    },
-    {
-        id: 'custom',
-        title: 'Custom',
-        ratio: 'Variable',
-        subtitle: 'Current manual settings',
-        xmin: -3,
-        xmax: 3,
-        ymin: -3,
-        ymax: 3,
-        expression: 'x^2',
-        color: 'blue',
-        thickness: 'thick',
-    },
+    { id: 'academic', title: 'Academic', ratio: '4:3', subtitle: 'Balanced box grid', example: 'lp' },
+    { id: 'wide', title: 'Wide', ratio: '16:9', subtitle: 'Wide box grid', example: 'areas' },
+    { id: 'signals-systems', title: 'Signals & Systems', ratio: '5:2', subtitle: 'Centered waveform' },
+    { id: 'clean-cartesian', title: 'Clean Cartesian', ratio: '3:2', subtitle: 'Minimal middle axes', example: 'tangent' },
+    { id: 'portrait', title: 'Portrait', ratio: '3:4', subtitle: 'Tall box grid', example: 'surplus' },
+    { id: 'classic-square', title: 'Classic Square', ratio: '1:1', subtitle: 'Original box style', example: 'levels' },
+    { id: 'custom', title: 'Custom', ratio: 'Variable', subtitle: 'Current appearance', example: 'areas' },
 ];
 
-/**
- * Create a SettingsManager configured with the preset or sample function for preview.
- */
+/** Use the stock examples as sample data, restyled by the chosen preset. */
 export function createPresetPreviewSettings(
     presetId: AppearancePresetId,
     currentSettings?: SettingsManager
 ): SettingsManager {
-    const s = new SettingsManager();
-    const preset = getPresetById(presetId);
     const sample = PRESET_SAMPLES.find((p) => p.id === presetId);
+    const example = EXAMPLES.find((item) => item.id === sample?.example);
+    const settings = example ? SettingsManager.fromJSON(cloneData(example.data)) : new SettingsManager();
 
-    if (presetId === 'custom') {
-        if (currentSettings) {
-            for (const [k, v] of Object.entries(currentSettings.serialize())) {
-                s.setValue(k, v);
-            }
-        }
-        const funcs = (s.getValue('functions') as unknown[]) || [];
-        if (!funcs.length) {
-            s.setValue('functions', [
-                {
-                    id: 'custom_f1',
-                    name: 'f1',
-                    expression: 'x^2',
-                    color: 'blue',
-                    thickness: 'thick',
-                },
-            ]);
-        }
-    } else if (preset && sample) {
-        applyPreset(s, preset.id);
-        s.setValue('xmin', String(sample.xmin));
-        s.setValue('xmax', String(sample.xmax));
-        s.setValue('ymin', String(sample.ymin));
-        s.setValue('ymax', String(sample.ymax));
-        s.setValue('title', '');
-        s.setValue('show_axis_label', true);
-        s.setValue('functions', [
-            {
-                id: `sample_${preset.id}`,
-                name: 'f1',
-                expression: sample.expression,
-                color: sample.color,
-                thickness: sample.thickness,
-            },
+    if (presetId === 'signals-systems') {
+        settings.setValue('xmin', '-6');
+        settings.setValue('xmax', '6');
+        settings.setValue('ymin', '-1.2');
+        settings.setValue('ymax', '1.2');
+        settings.setValue('functions', [
+            { name: 'f1', expression: 'exp(-0.32*abs(x))*cos(3*x)', color: 'blue', fill: true, fillOpacity: 0.25, thickness: 'very thick' },
+            { name: 'f2', expression: 'exp(-0.32*abs(x))', color: 'teal', dashed: true, thickness: 'thin' },
+            { name: 'f3', expression: '-exp(-0.32*abs(x))', color: 'teal', dashed: true, thickness: 'thin' },
         ]);
+    } else {
+        const functions = settings.getValue<FunctionParameters[]>('functions');
+        settings.setValue('functions', functions.map((fn) => ({ ...fn, showLegend: false })));
+        const tools = settings.getValue<Tool[]>('tools');
+        settings.setValue('tools', tools.map((tool) => ({ ...tool, label: '', conditionLabels: [] })));
+        settings.setValue('annotations', []);
     }
+    settings.setValue('equalScale', false);
 
-    return s;
+    if (presetId === 'custom' && currentSettings) {
+        // Preview the style on a small, independent scene even if the user's
+        // chart is 3D, expensive, or temporarily has invalid expressions.
+        for (const key of ['size_x_cm', 'size_y_cm', 'axis_style', 'showLargeGrid', 'showSmallGrid', 'majorTickNum', 'gridSize']) {
+            settings.setValue(key, currentSettings.getValue(key));
+        }
+    } else {
+        applyPreset(settings, presetId);
+    }
+    return settings;
 }
