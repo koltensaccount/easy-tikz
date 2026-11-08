@@ -4,31 +4,33 @@
  * expressions (`2*pi`, a slider name) and show the fallback errors that
  * settings.resolveView reports.
  */
+import { setIcon } from 'obsidian';
 import { MathContext, ValidateResult } from '../mathcontext';
 import { RANGE_DEFAULTS, RangeKey, SettingsManager } from '../settings';
+import { SVGRenderer } from '../renderer';
 import {
-    APPEARANCE_OPTIONS,
     AppearancePresetId,
+    PRESET_SAMPLES,
     applyPreset,
+    createPresetPreviewSettings,
     detectPreset,
     getPresetById,
 } from '../appearance';
 import { FieldHandle, PanelHost } from './host';
 import {
     ChipHandle,
-    DropdownHandle,
     ExprInputHandle,
     FieldLayoutHandle,
     LiveSliderHandle,
     SegmentedHandle,
     TextInputHandle,
     chip,
-    dropdown,
     exprInput,
     field,
     formatDecimals,
     group,
     liveSlider,
+    popover,
     segmented,
     textButton,
     textInput,
@@ -97,6 +99,61 @@ function variablesProblem(spec: string, settings: SettingsManager): string | nul
     return null;
 }
 
+const previewCache = new Map<AppearancePresetId, SVGSVGElement>();
+
+function renderPresetPreview(
+    presetId: AppearancePresetId,
+    currentSettings?: SettingsManager
+): SVGSVGElement | null {
+    if (typeof document === 'undefined') return null;
+
+    if (presetId !== 'custom') {
+        const cached = previewCache.get(presetId);
+        if (cached) return cached.cloneNode(true) as SVGSVGElement;
+    }
+
+    const s = createPresetPreviewSettings(presetId, currentSettings);
+    const math = s.createMathContext();
+    const config = s.toRendererConfig(math);
+
+    const wCm = Math.max(1, Number(s.getValue('size_x_cm')) || 10);
+    const hCm = Math.max(1, Number(s.getValue('size_y_cm')) || 10);
+    const ratio = wCm / hCm;
+
+    const longSide = 240;
+    let widthPx = ratio >= 1 ? longSide : Math.round(longSide * ratio);
+    let heightPx = ratio >= 1 ? Math.round(longSide / ratio) : longSide;
+
+    if (heightPx < 125) {
+        const factor = 125 / heightPx;
+        heightPx = 125;
+        widthPx = Math.round(widthPx * factor);
+    }
+    if (widthPx < 205) {
+        const factor = 205 / widthPx;
+        widthPx = 205;
+        heightPx = Math.round(heightPx * factor);
+    }
+
+    config.width = widthPx;
+    config.height = heightPx;
+    config.title = '';
+
+    const renderer = new SVGRenderer(config, { math, quality: 'draft' });
+    const svg = renderer.render() as SVGSVGElement;
+    svg.removeAttribute('width');
+    svg.removeAttribute('height');
+    svg.setAttribute('viewBox', `0 0 ${widthPx} ${heightPx}`);
+    svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+
+    if (presetId !== 'custom') {
+        previewCache.set(presetId, svg);
+        return svg.cloneNode(true) as SVGSVGElement;
+    }
+
+    return svg;
+}
+
 export function createChartPanel(parent: HTMLElement, host: PanelHost, opts: ChartPanelOptions): ChartPanelHandle {
     const el = parent.createDiv({ cls: 'etz-chart-panel' });
     const settings = host.settings;
@@ -108,29 +165,40 @@ export function createChartPanel(parent: HTMLElement, host: PanelHost, opts: Cha
     let elevation: LiveSliderHandle | null = null;
     let azimuth: LiveSliderHandle | null = null;
     let axisStyle: SegmentedHandle<string> | null = null;
-    let appearanceDropdown: DropdownHandle<AppearancePresetId> | null = null;
-    let appearanceField: FieldLayoutHandle | null = null;
+    let appearanceTrigger: HTMLButtonElement | null = null;
+    let appearanceTriggerName: HTMLElement | null = null;
+    let appearanceTriggerRatio: HTMLElement | null = null;
     let majorDivisionsSlider: LiveSliderHandle | null = null;
     let minorLinesSlider: LiveSliderHandle | null = null;
     let widthSlider: LiveSliderHandle | null = null;
     let heightSlider: LiveSliderHandle | null = null;
 
-    const getPresetDescription = (presetId: AppearancePresetId): string => {
-        if (presetId === 'custom') return 'Custom proportions and appearance';
+    const getPresetRatioText = (presetId: AppearancePresetId): string => {
+        if (presetId === 'custom') return 'Custom';
         const preset = getPresetById(presetId);
-        return preset ? `${preset.ratio} — ${preset.description}` : '';
+        return preset ? preset.ratio : 'Custom';
     };
 
-    const updateAppearanceDropdown = () => {
+    const getPresetDisplayName = (presetId: AppearancePresetId): string => {
+        if (presetId === 'custom') return 'Custom';
+        const preset = getPresetById(presetId);
+        return preset ? preset.name : 'Custom';
+    };
+
+    const updateAppearanceTrigger = () => {
         const active = detectPreset(settings);
-        appearanceDropdown?.setValue(active);
-        appearanceField?.setHint(getPresetDescription(active));
+        if (appearanceTriggerName) appearanceTriggerName.setText(getPresetDisplayName(active));
+        if (appearanceTriggerRatio) appearanceTriggerRatio.setText(getPresetRatioText(active));
+        if (appearanceTrigger) {
+            appearanceTrigger.setAttribute(
+                'aria-label',
+                `Graph appearance: ${getPresetDisplayName(active)} (${getPresetRatioText(active)})`
+            );
+        }
     };
 
     const syncAppearanceControls = () => {
-        const active = detectPreset(settings);
-        appearanceDropdown?.setValue(active);
-        appearanceField?.setHint(getPresetDescription(active));
+        updateAppearanceTrigger();
         axisStyle?.setValue(str(settings.getValue('axis_style')) || 'box');
         gridMajor?.setValue(settings.getValue('showLargeGrid') === true);
         gridMinor?.setValue(settings.getValue('showSmallGrid') === true);
@@ -140,25 +208,100 @@ export function createChartPanel(parent: HTMLElement, host: PanelHost, opts: Cha
         heightSlider?.setValue(num(settings.getValue('size_y_cm'), 10));
     };
 
+    const openAppearancePicker = (anchor: HTMLElement) => {
+        popover(anchor, host, {
+            label: 'Graph appearance presets',
+            align: 'start',
+            placement: 'below',
+            cls: 'etz-appearance-popover',
+            initialFocus: (pop) =>
+                pop.querySelector<HTMLElement>('.etz-preset-card.is-selected') ??
+                pop.querySelector<HTMLElement>('.etz-preset-card'),
+            build: (pop, self) => {
+                const header = pop.createDiv({ cls: 'etz-appearance-popover-header' });
+                header.createSpan({ cls: 'etz-appearance-popover-title', text: 'Graph appearance' });
+                const closeBtn = header.createEl('button', {
+                    cls: 'clickable-icon',
+                    attr: { 'aria-label': 'Close presets', type: 'button' },
+                });
+                setIcon(closeBtn, 'x');
+                closeBtn.addEventListener('click', () => self.close());
+
+                const gallery = pop.createDiv({ cls: 'etz-appearance-gallery' });
+                const currentPresetId = detectPreset(settings);
+
+                for (const sample of PRESET_SAMPLES) {
+                    const isSelected = sample.id === currentPresetId;
+                    const card = gallery.createEl('button', {
+                        cls: ['etz-preset-card', isSelected ? 'is-selected' : ''].filter(Boolean).join(' '),
+                        attr: {
+                            type: 'button',
+                            'aria-label': `${sample.title} (${sample.ratio})`,
+                            'aria-pressed': isSelected ? 'true' : 'false',
+                        },
+                    });
+
+                    // Mini preview thumbnail
+                    const thumb = card.createDiv({ cls: 'etz-preset-thumb' });
+                    const svg = renderPresetPreview(sample.id, settings);
+                    if (svg) {
+                        thumb.appendChild(svg);
+                    } else {
+                        thumb.createSpan({ cls: 'etz-preset-placeholder', text: sample.ratio });
+                    }
+
+                    // Metadata
+                    const meta = card.createDiv({ cls: 'etz-preset-meta' });
+                    const titleRow = meta.createDiv({ cls: 'etz-preset-title-row' });
+                    titleRow.createSpan({ cls: 'etz-preset-name', text: sample.title });
+                    titleRow.createSpan({ cls: 'etz-preset-ratio', text: sample.ratio });
+                    meta.createDiv({ cls: 'etz-preset-subtitle', text: sample.subtitle });
+
+                    card.addEventListener('click', () => {
+                        applyPreset(settings, sample.id);
+                        syncAppearanceControls();
+                        host.requestUpdate();
+                        self.close();
+                    });
+                }
+            },
+        });
+    };
+
     const buildAppearance = () => {
         const g = group(el, 'Graph appearance');
         const active = detectPreset(settings);
-        appearanceField = field(g.body, {
-            label: 'Preset',
-            layout: 'inline',
-            hint: getPresetDescription(active),
-        });
-        appearanceDropdown = dropdown<AppearancePresetId>(appearanceField.controlEl, {
-            label: 'Graph appearance',
-            value: active,
-            options: APPEARANCE_OPTIONS,
-            onChange: (presetId) => {
-                applyPreset(settings, presetId);
-                syncAppearanceControls();
-                host.requestUpdate();
+        const row = g.body.createDiv({ cls: 'etz-appearance-row' });
+
+        appearanceTrigger = row.createEl('button', {
+            cls: 'etz-appearance-trigger',
+            attr: {
+                type: 'button',
+                'aria-label': `Graph appearance: ${getPresetDisplayName(active)} (${getPresetRatioText(active)})`,
+                'aria-haspopup': 'dialog',
             },
         });
-        appearanceField.bind(appearanceDropdown.el);
+
+        const content = appearanceTrigger.createDiv({ cls: 'etz-appearance-trigger-content' });
+        const iconWrap = content.createSpan({ cls: 'etz-appearance-trigger-icon' });
+        setIcon(iconWrap, 'sliders-horizontal');
+
+        appearanceTriggerName = content.createSpan({
+            cls: 'etz-appearance-trigger-name',
+            text: getPresetDisplayName(active),
+        });
+
+        appearanceTriggerRatio = content.createSpan({
+            cls: 'etz-appearance-trigger-ratio',
+            text: getPresetRatioText(active),
+        });
+
+        const chevron = appearanceTrigger.createSpan({ cls: 'etz-appearance-trigger-chevron' });
+        setIcon(chevron, 'chevron-down');
+
+        appearanceTrigger.addEventListener('click', () => {
+            if (appearanceTrigger) openAppearancePicker(appearanceTrigger);
+        });
     };
 
     const isPolar = () => settings.getValue('coordinateSystem') === 'polar';
@@ -271,7 +414,7 @@ export function createChartPanel(parent: HTMLElement, host: PanelHost, opts: Cha
                 ],
                 onChange: (value) => {
                     settings.setValue('axis_style', value);
-                    updateAppearanceDropdown();
+                    updateAppearanceTrigger();
                     host.requestUpdate();
                 },
             });
@@ -361,7 +504,7 @@ export function createChartPanel(parent: HTMLElement, host: PanelHost, opts: Cha
             value: settings.getValue('showLargeGrid') === true,
             onChange: (on) => {
                 settings.setValue('showLargeGrid', on);
-                updateAppearanceDropdown();
+                updateAppearanceTrigger();
                 host.requestUpdate();
             },
         });
@@ -370,7 +513,7 @@ export function createChartPanel(parent: HTMLElement, host: PanelHost, opts: Cha
             value: settings.getValue('showSmallGrid') === true,
             onChange: (on) => {
                 settings.setValue('showSmallGrid', on);
-                updateAppearanceDropdown();
+                updateAppearanceTrigger();
                 host.requestUpdate();
             },
         });
@@ -381,7 +524,7 @@ export function createChartPanel(parent: HTMLElement, host: PanelHost, opts: Cha
             { min: 2, max: 20, step: 1, fallback: 8 },
             undefined,
             undefined,
-            () => updateAppearanceDropdown()
+            () => updateAppearanceTrigger()
         );
         minorLinesSlider = sliderField(
             g.body,
@@ -390,7 +533,7 @@ export function createChartPanel(parent: HTMLElement, host: PanelHost, opts: Cha
             { min: 1, max: 10, step: 1, fallback: 5 },
             undefined,
             undefined,
-            () => updateAppearanceDropdown()
+            () => updateAppearanceTrigger()
         );
     };
 
@@ -404,7 +547,7 @@ export function createChartPanel(parent: HTMLElement, host: PanelHost, opts: Cha
             { min: 2, max: 30, step: 0.5, fallback: 10 },
             cm,
             undefined,
-            () => updateAppearanceDropdown()
+            () => updateAppearanceTrigger()
         );
         heightSlider = sliderField(
             g.body,
@@ -413,7 +556,7 @@ export function createChartPanel(parent: HTMLElement, host: PanelHost, opts: Cha
             { min: 2, max: 30, step: 0.5, fallback: 8 },
             cm,
             undefined,
-            () => updateAppearanceDropdown()
+            () => updateAppearanceTrigger()
         );
     };
 
@@ -468,8 +611,9 @@ export function createChartPanel(parent: HTMLElement, host: PanelHost, opts: Cha
         unregister = [];
         ranges.forEach((h) => h.destroy());
         ranges.clear();
-        appearanceDropdown = null;
-        appearanceField = null;
+        appearanceTrigger = null;
+        appearanceTriggerName = null;
+        appearanceTriggerRatio = null;
         majorDivisionsSlider = minorLinesSlider = widthSlider = heightSlider = null;
         gridMajor = gridMinor = elevation = azimuth = null;
         axisStyle = null;
@@ -503,9 +647,7 @@ export function createChartPanel(parent: HTMLElement, host: PanelHost, opts: Cha
             minorLinesSlider?.setValue(num(settings.getValue('gridSize'), 5));
             widthSlider?.setValue(num(settings.getValue('size_x_cm'), 10));
             heightSlider?.setValue(num(settings.getValue('size_y_cm'), 10));
-            const activePreset = detectPreset(settings);
-            appearanceDropdown?.setValue(activePreset);
-            appearanceField?.setHint(getPresetDescription(activePreset));
+            updateAppearanceTrigger();
         },
         hasErrors: () => Array.from(ranges.values()).some((h) => h.hasError()),
     };

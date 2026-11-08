@@ -188,3 +188,209 @@ export function applyPreset(settings: SettingsManager, id: AppearancePresetId): 
     settings.setValue('graphAppearance', preset.id);
     return true;
 }
+
+/**
+ * Context-aware origin centering logic:
+ * - 'middle': (0,0) at plot center: [-W/2, W/2], [-H/2, H/2]
+ * - 'box': (0,0) at bottom-left corner: [0, W], [0, H]
+ * - 'axes': (0,0) at bottom-left corner: [0, W], [0, H] (preserving 'axes' style)
+ * - 'polar' or 3D: (0,0) at center
+ */
+export function computeOriginBounds(
+    axisStyle: AxisStyle,
+    view: { xmin: number; xmax: number; ymin: number; ymax: number; zmin?: number; zmax?: number },
+    options: { isPolar?: boolean; is3D?: boolean } = {}
+): {
+    xmin: number;
+    xmax: number;
+    ymin: number;
+    ymax: number;
+    zmin?: number;
+    zmax?: number;
+} {
+    const isPolar = options.isPolar === true;
+    const is3D = options.is3D === true;
+    const atCenter = isPolar || is3D || axisStyle === 'middle';
+
+    const w = view.xmax - view.xmin;
+    const h = view.ymax - view.ymin;
+
+    const xmin = atCenter ? -w / 2 : 0;
+    const xmax = atCenter ? w / 2 : w;
+    const ymin = atCenter ? -h / 2 : 0;
+    const ymax = atCenter ? h / 2 : h;
+
+    const res: { xmin: number; xmax: number; ymin: number; ymax: number; zmin?: number; zmax?: number } = {
+        xmin,
+        xmax,
+        ymin,
+        ymax,
+    };
+
+    if (is3D && view.zmin !== undefined && view.zmax !== undefined) {
+        const d = view.zmax - view.zmin;
+        res.zmin = -d / 2;
+        res.zmax = d / 2;
+    }
+
+    return res;
+}
+
+export interface PresetSampleDefinition {
+    id: AppearancePresetId;
+    title: string;
+    ratio: string;
+    subtitle: string;
+    xmin: number;
+    xmax: number;
+    ymin: number;
+    ymax: number;
+    expression: string;
+    color: string;
+    thickness: 'thin' | 'normal' | 'thick' | 'very_thick';
+}
+
+export const PRESET_SAMPLES: readonly PresetSampleDefinition[] = [
+    {
+        id: 'academic',
+        title: 'Academic',
+        ratio: '4:3',
+        subtitle: 'Balanced · Box · Grid',
+        xmin: -3,
+        xmax: 3,
+        ymin: -1,
+        ymax: 5,
+        expression: '0.5*x^2',
+        color: 'blue',
+        thickness: 'thick',
+    },
+    {
+        id: 'wide',
+        title: 'Wide',
+        ratio: '16:9',
+        subtitle: 'Presentation · Box · Grid',
+        xmin: -5,
+        xmax: 5,
+        ymin: -2,
+        ymax: 2,
+        expression: '1.2*cos(x)',
+        color: 'teal',
+        thickness: 'thick',
+    },
+    {
+        id: 'signals-systems',
+        title: 'Signals & Systems',
+        ratio: '5:2',
+        subtitle: 'Waveform · Middle axes',
+        xmin: -5,
+        xmax: 5,
+        ymin: -1.5,
+        ymax: 1.5,
+        expression: 'exp(-0.35*abs(x)) * cos(2.5*x)',
+        color: 'blue',
+        thickness: 'thick',
+    },
+    {
+        id: 'clean-cartesian',
+        title: 'Clean Cartesian',
+        ratio: '3:2',
+        subtitle: 'Origin crossing · Minimal',
+        xmin: -3,
+        xmax: 3,
+        ymin: -3,
+        ymax: 3,
+        expression: '0.4*(x^3 - 3*x)',
+        color: 'purple',
+        thickness: 'thick',
+    },
+    {
+        id: 'portrait',
+        title: 'Portrait',
+        ratio: '3:4',
+        subtitle: 'Vertical · Box · Grid',
+        xmin: -2,
+        xmax: 2,
+        ymin: -4,
+        ymax: 4,
+        expression: '0.6*x^3',
+        color: 'orange',
+        thickness: 'thick',
+    },
+    {
+        id: 'classic-square',
+        title: 'Classic Square',
+        ratio: '1:1',
+        subtitle: 'Original 1:1 · Box',
+        xmin: -3,
+        xmax: 3,
+        ymin: -3,
+        ymax: 3,
+        expression: '2.5 - 0.5*x^2',
+        color: 'blue',
+        thickness: 'thick',
+    },
+    {
+        id: 'custom',
+        title: 'Custom',
+        ratio: 'Variable',
+        subtitle: 'Current manual settings',
+        xmin: -3,
+        xmax: 3,
+        ymin: -3,
+        ymax: 3,
+        expression: 'x^2',
+        color: 'blue',
+        thickness: 'thick',
+    },
+];
+
+/**
+ * Create a SettingsManager configured with the preset or sample function for preview.
+ */
+export function createPresetPreviewSettings(
+    presetId: AppearancePresetId,
+    currentSettings?: SettingsManager
+): SettingsManager {
+    const s = new SettingsManager();
+    const preset = getPresetById(presetId);
+    const sample = PRESET_SAMPLES.find((p) => p.id === presetId);
+
+    if (presetId === 'custom') {
+        if (currentSettings) {
+            for (const [k, v] of Object.entries(currentSettings.serialize())) {
+                s.setValue(k, v);
+            }
+        }
+        const funcs = (s.getValue('functions') as unknown[]) || [];
+        if (!funcs.length) {
+            s.setValue('functions', [
+                {
+                    id: 'custom_f1',
+                    name: 'f1',
+                    expression: 'x^2',
+                    color: 'blue',
+                    thickness: 'thick',
+                },
+            ]);
+        }
+    } else if (preset && sample) {
+        applyPreset(s, preset.id);
+        s.setValue('xmin', String(sample.xmin));
+        s.setValue('xmax', String(sample.xmax));
+        s.setValue('ymin', String(sample.ymin));
+        s.setValue('ymax', String(sample.ymax));
+        s.setValue('title', '');
+        s.setValue('show_axis_label', true);
+        s.setValue('functions', [
+            {
+                id: `sample_${preset.id}`,
+                name: 'f1',
+                expression: sample.expression,
+                color: sample.color,
+                thickness: sample.thickness,
+            },
+        ]);
+    }
+
+    return s;
+}

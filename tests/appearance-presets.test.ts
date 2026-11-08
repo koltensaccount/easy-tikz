@@ -6,8 +6,11 @@ import { test, assert, near } from './_lib';
 import { SettingsManager } from '../src/settings';
 import {
     GRAPH_APPEARANCE_PRESETS,
+    PRESET_SAMPLES,
     AppearancePresetId,
     applyPreset,
+    computeOriginBounds,
+    createPresetPreviewSettings,
     detectPreset,
     getPresetById,
     matchesPreset,
@@ -258,4 +261,146 @@ test('export proportions: canvas and TikZ export reflect preset aspect ratios', 
         assert.ok(code.includes(`width=${preset.size_x_cm}cm`), `TikZ width for ${preset.id}`);
         assert.ok(code.includes(`height=${preset.size_y_cm}cm`), `TikZ height for ${preset.id}`);
     }
+});
+
+test('context-aware origin bounds: middle centers (0,0) with exact span preserved', () => {
+    // Initial span: W = 10 - (-0.5) = 10.5, H = 5 - (-0.5) = 5.5
+    const view = { xmin: -0.5, xmax: 10, ymin: -0.5, ymax: 5 };
+    const res = computeOriginBounds('middle', view);
+
+    assert.equal(res.xmin, -5.25);
+    assert.equal(res.xmax, 5.25);
+    assert.equal(res.ymin, -2.75);
+    assert.equal(res.ymax, 2.75);
+    assert.equal(res.xmax - res.xmin, 10.5);
+    assert.equal(res.ymax - res.ymin, 5.5);
+
+    // Idempotency: centering again gives the exact same bounds
+    const res2 = computeOriginBounds('middle', res);
+    assert.equal(res2.xmin, -5.25);
+    assert.equal(res2.xmax, 5.25);
+    assert.equal(res2.ymin, -2.75);
+    assert.equal(res2.ymax, 2.75);
+});
+
+test('context-aware origin bounds: box places (0,0) at bottom-left corner with exact span preserved', () => {
+    // Initial span: W = 10.5, H = 5.5
+    const view = { xmin: -0.5, xmax: 10, ymin: -0.5, ymax: 5 };
+    const res = computeOriginBounds('box', view);
+
+    assert.equal(res.xmin, 0);
+    assert.equal(res.xmax, 10.5);
+    assert.equal(res.ymin, 0);
+    assert.equal(res.ymax, 5.5);
+    assert.equal(res.xmax - res.xmin, 10.5);
+    assert.equal(res.ymax - res.ymin, 5.5);
+
+    // Idempotency
+    const res2 = computeOriginBounds('box', res);
+    assert.equal(res2.xmin, 0);
+    assert.equal(res2.xmax, 10.5);
+    assert.equal(res2.ymin, 0);
+    assert.equal(res2.ymax, 5.5);
+});
+
+test('context-aware origin bounds: axes places (0,0) at bottom-left corner like box', () => {
+    // Initial span: W = 8, H = 8
+    const view = { xmin: -2, xmax: 6, ymin: -3, ymax: 5 };
+    const res = computeOriginBounds('axes', view);
+
+    assert.equal(res.xmin, 0);
+    assert.equal(res.xmax, 8);
+    assert.equal(res.ymin, 0);
+    assert.equal(res.ymax, 8);
+    assert.equal(res.xmax - res.xmin, 8);
+    assert.equal(res.ymax - res.ymin, 8);
+
+    // Idempotency
+    const res2 = computeOriginBounds('axes', res);
+    assert.equal(res2.xmin, 0);
+    assert.equal(res2.xmax, 8);
+    assert.equal(res2.ymin, 0);
+    assert.equal(res2.ymax, 8);
+});
+
+test('context-aware origin bounds: negative offset ranges', () => {
+    const view = { xmin: -10, xmax: -2, ymin: 1, ymax: 5 }; // W = 8, H = 4
+
+    const mid = computeOriginBounds('middle', view);
+    assert.equal(mid.xmin, -4);
+    assert.equal(mid.xmax, 4);
+    assert.equal(mid.ymin, -2);
+    assert.equal(mid.ymax, 2);
+
+    const bx = computeOriginBounds('box', view);
+    assert.equal(bx.xmin, 0);
+    assert.equal(bx.xmax, 8);
+    assert.equal(bx.ymin, 0);
+    assert.equal(bx.ymax, 4);
+
+    const ax = computeOriginBounds('axes', view);
+    assert.equal(ax.xmin, 0);
+    assert.equal(ax.xmax, 8);
+    assert.equal(ax.ymin, 0);
+    assert.equal(ax.ymax, 4);
+});
+
+test('context-aware origin bounds: polar always centers origin', () => {
+    const view = { xmin: 0, xmax: 10, ymin: 0, ymax: 10 };
+    const res = computeOriginBounds('box', view, { isPolar: true });
+    assert.equal(res.xmin, -5);
+    assert.equal(res.xmax, 5);
+    assert.equal(res.ymin, -5);
+    assert.equal(res.ymax, 5);
+});
+
+test('context-aware origin bounds: 3D centers x, y, and z', () => {
+    const view = { xmin: 0, xmax: 10, ymin: 0, ymax: 10, zmin: 2, zmax: 8 };
+    const res = computeOriginBounds('box', view, { is3D: true });
+    assert.equal(res.xmin, -5);
+    assert.equal(res.xmax, 5);
+    assert.equal(res.ymin, -5);
+    assert.equal(res.ymax, 5);
+    assert.equal(res.zmin, -3);
+    assert.equal(res.zmax, 3);
+});
+
+test('visual preset picker: all 7 preset samples are defined with representative functions', () => {
+    assert.equal(PRESET_SAMPLES.length, 7);
+
+    const ids = PRESET_SAMPLES.map((s) => s.id);
+    assert.deepEqual(ids, [
+        'academic',
+        'wide',
+        'signals-systems',
+        'clean-cartesian',
+        'portrait',
+        'classic-square',
+        'custom',
+    ]);
+
+    const signals = PRESET_SAMPLES.find((s) => s.id === 'signals-systems');
+    assert.ok(signals);
+    assert.equal(signals!.ratio, '5:2');
+    assert.ok(signals!.expression.includes('cos'), 'Signals & Systems sample uses waveform expression');
+
+    const clean = PRESET_SAMPLES.find((s) => s.id === 'clean-cartesian');
+    assert.ok(clean);
+    assert.equal(clean!.ratio, '3:2');
+    assert.ok(clean!.expression.includes('x^3'), 'Clean Cartesian sample uses cubic crossing at origin');
+
+    // Preview settings instantiation for all presets
+    for (const sample of PRESET_SAMPLES) {
+        const s = createPresetPreviewSettings(sample.id);
+        const funcs = (s.getValue('functions') as Array<{ expression: string }>) || [];
+        assert.ok(funcs.length > 0, `Preset ${sample.id} has preview function`);
+        assert.ok(funcs[0].expression.length > 0, `Preset ${sample.id} has non-empty expression`);
+    }
+
+    // Custom preview settings preserves existing functions
+    const customMgr = new SettingsManager();
+    customMgr.setValue('functions', [{ name: 'f1', expression: 'tan(x)', color: 'red' }]);
+    const customPreview = createPresetPreviewSettings('custom', customMgr);
+    const customFuncs = customPreview.getValue('functions') as Array<{ expression: string }>;
+    assert.equal(customFuncs[0].expression, 'tan(x)');
 });

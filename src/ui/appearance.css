@@ -1,0 +1,198 @@
+/*
+ * Styles for the Visual Graph Appearance Preset Picker.
+ */
+
+.etz-appearance-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+
+.etz-appearance-trigger {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    min-height: 38px;
+    padding: 6px 12px;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: var(--etz-radius-m);
+    background-color: var(--background-primary-alt);
+    color: var(--text-normal);
+    cursor: pointer;
+    text-align: left;
+    box-shadow: none;
+    transition: border-color var(--etz-transition), background-color var(--etz-transition);
+}
+
+.etz-appearance-trigger:hover {
+    border-color: var(--etz-accent-border);
+    background-color: var(--background-modifier-hover);
+    box-shadow: none;
+}
+
+.etz-appearance-trigger:focus-visible {
+    box-shadow: var(--etz-focus-ring);
+}
+
+.etz-appearance-trigger-content {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+}
+
+.etz-appearance-trigger-icon {
+    display: flex;
+    align-items: center;
+    color: var(--text-muted);
+}
+
+.etz-appearance-trigger-name {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-normal);
+    white-space: nowrap;
+}
+
+.etz-appearance-trigger-ratio {
+    display: inline-block;
+    padding: 1px 6px;
+    border-radius: var(--etz-radius-s);
+    background-color: var(--background-secondary-alt);
+    color: var(--text-muted);
+    font-size: 11px;
+    font-weight: 600;
+}
+
+.etz-appearance-trigger-chevron {
+    display: flex;
+    align-items: center;
+    color: var(--text-muted);
+    margin-left: 8px;
+}
+
+/* -------------------------------- Popover Gallery */
+
+.etz-popover.etz-appearance-popover {
+    width: 390px;
+    max-width: min(92vw, 420px);
+    max-height: min(85vh, 560px);
+    display: flex;
+    flex-direction: column;
+    padding: 12px;
+    overflow: hidden;
+}
+
+.etz-appearance-popover-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding-bottom: 8px;
+    margin-bottom: 10px;
+    border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.etz-appearance-popover-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-normal);
+}
+
+.etz-appearance-gallery {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    overflow-y: auto;
+    padding: 2px;
+}
+
+.etz-preset-card {
+    display: flex;
+    flex-direction: column;
+    padding: 6px;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: var(--etz-radius-l);
+    background-color: var(--background-primary-alt);
+    cursor: pointer;
+    text-align: left;
+    box-shadow: none;
+    transition: border-color var(--etz-transition), background-color var(--etz-transition), transform 0.1s ease;
+}
+
+.etz-preset-card:hover {
+    border-color: var(--etz-accent-border);
+    background-color: var(--background-modifier-hover);
+    box-shadow: none;
+}
+
+.etz-preset-card:focus-visible {
+    box-shadow: var(--etz-focus-ring);
+}
+
+.etz-preset-card.is-selected {
+    border-color: var(--interactive-accent);
+    background-color: color-mix(in srgb, var(--interactive-accent) 10%, var(--background-primary-alt));
+    box-shadow: 0 0 0 1px var(--interactive-accent);
+}
+
+.etz-preset-thumb {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 72px;
+    width: 100%;
+    padding: 4px;
+    border-radius: var(--etz-radius-m);
+    background-color: var(--background-primary);
+    overflow: hidden;
+    pointer-events: none;
+}
+
+.etz-preset-thumb svg {
+    max-width: 100%;
+    max-height: 100%;
+    display: block;
+}
+
+.etz-preset-meta {
+    margin-top: 6px;
+    padding: 0 2px;
+    pointer-events: none;
+}
+
+.etz-preset-title-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 4px;
+}
+
+.etz-preset-name {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-normal);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.etz-preset-ratio {
+    font-size: 10px;
+    font-weight: 600;
+    padding: 1px 4px;
+    border-radius: 4px;
+    background-color: var(--background-secondary-alt);
+    color: var(--text-muted);
+    flex-shrink: 0;
+}
+
+.etz-preset-subtitle {
+    margin-top: 2px;
+    font-size: 11px;
+    color: var(--text-muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
