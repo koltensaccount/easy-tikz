@@ -148,6 +148,7 @@ interface MarkerMark {
     sy: number;
     r: number;
     color: string;
+    hollow?: boolean;
     /** Plain text (LaTeX stripped); '' for none. */
     label: string;
 }
@@ -1059,6 +1060,7 @@ export class SVG3DRenderer {
                 sy: q.sy,
                 r: MARKER_RADIUS[p.size] || MARKER_RADIUS.normal,
                 color: this.colorInfo(p.color).css,
+                hollow: p.hollow,
                 label: p.label ? labelDisplayText(p.label, stripLatex) : '',
             });
         }
@@ -1245,8 +1247,8 @@ export class SVG3DRenderer {
             circle.setAttribute('cx', m.sx.toFixed(2));
             circle.setAttribute('cy', m.sy.toFixed(2));
             circle.setAttribute('r', String(m.r));
-            circle.setAttribute('fill', m.color);
-            circle.setAttribute('stroke', this.themeColors.bgPrimary);
+            circle.setAttribute('fill', m.hollow ? this.themeColors.bgPrimary : m.color);
+            circle.setAttribute('stroke', m.hollow ? m.color : this.themeColors.bgPrimary);
             circle.setAttribute('stroke-width', '1.5');
             group.appendChild(circle);
         }
@@ -1530,10 +1532,10 @@ export class SVG3DRenderer {
         for (const m of this.markerMarks) {
             ctx.beginPath();
             ctx.arc(m.sx, m.sy, m.r, 0, Math.PI * 2);
-            ctx.fillStyle = m.color;
+            ctx.fillStyle = m.hollow ? this.themeColors.bgPrimary : m.color;
             ctx.fill();
             ctx.lineWidth = 1.5;
-            ctx.strokeStyle = this.themeColors.bgPrimary;
+            ctx.strokeStyle = m.hollow ? m.color : this.themeColors.bgPrimary;
             ctx.stroke();
         }
         ctx.font = this.canvasFont(11);

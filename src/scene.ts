@@ -46,6 +46,7 @@ import { findExtrema1D } from './math';
 import { errorText } from './util';
 
 export type ArrowHeads = 'forward' | 'backward' | 'both';
+import { endpointOf, explicitEndpoints, arrowEnds } from './endpoints';
 
 export interface FillPrim {
     /** Even-odd rings. */
@@ -74,6 +75,7 @@ export interface MarkerPrim {
     y: number;
     color: string;
     size: MarkerSize;
+    hollow?: boolean;
     /** Drawn with reduced opacity (e.g. optimum of an unbounded problem within the view). */
     dim?: boolean;
 }
@@ -358,6 +360,7 @@ interface Point3Spec {
     z: number;
     color: string;
     size: MarkerSize;
+    hollow?: boolean;
     part: number;
     locals: Record<string, number>;
 }
@@ -1879,7 +1882,7 @@ function computePointsTool(t: PointsTool, ctx: Ctx): Output {
     const locked: LockKind | undefined =
         t.source === 'region' ? (objective ? 'optimum' : 'corner') : t.source === 'intersections' ? 'intersection' : t.source === 'lattice' ? 'lattice' : undefined;
     pts.forEach((p, index) => {
-        const m: MarkerPrim = { x: p.x, y: p.y, color, size };
+        const m: MarkerPrim = { x: p.x, y: p.y, color, size, ...(t.hollow ? {hollow:true} : {}) };
         if (dim) m.dim = true;
         out.markers.push(m);
         const handle: HandlePrim = { ref: { part: 'point', index, item: items[index] ?? -1 }, point: { x: p.x, y: p.y } };
@@ -1989,7 +1992,13 @@ function computeSegmentTool(t: SegmentTool, ctx: Ctx): Output {
     const arrow = ARROWS[t.style];
     const width = str(t.thickness) || 'thin';
     const dashed = !!t.dashed;
-    if (arrow) {
+    if (explicitEndpoints(t)) {
+        const start=endpointOf(t,'start'), end=endpointOf(t,'end');
+        out.strokes.push({lines:[pts],color,width,dashed,exact:true,...(t.closed?{closed:true}:{arrow:arrowEnds(start,end)})});
+        if(!t.closed) for(const [kind,p] of [[start,pts[0]],[end,pts[pts.length-1]]] as const){
+            if(kind==='dot'||kind==='hollow')out.markers.push({x:p.x,y:p.y,color,size:'normal',...(kind==='hollow'?{hollow:true}:{})});
+        }
+    } else if (arrow) {
         // Arrow heads on every leg (a simplex path), closing leg included.
         const legs: Pt[][] = [];
         for (let i = 1; i < pts.length; i++) legs.push([pts[i - 1], pts[i]]);
@@ -3519,7 +3528,7 @@ export function edgeLabelSide3D(
 }
 
 export interface Scene3D {
-    points: Array<{ x: number; y: number; z: number; color: string; size: MarkerSize; label?: string }>;
+    points: Array<{ x: number; y: number; z: number; color: string; size: MarkerSize; label?: string; hollow?: boolean }>;
     segments: Array<{
         a: [number, number, number];
         b: [number, number, number];
@@ -3558,6 +3567,7 @@ function computePoints3D(t: PointsTool, ctx: Ctx): Output {
         z: p[2],
         color,
         size,
+        ...(t.hollow ? {hollow:true} : {}),
         part: i,
         locals: { x: p[0], y: p[1], z: p[2], val: NaN, i: i + 1 },
     }));
@@ -3581,11 +3591,21 @@ function computeSegment3D(t: SegmentTool, ctx: Ctx): Output {
     const arrow = ARROWS[t.style];
     const color = str(t.color) || 'black';
     const width = str(t.thickness) || 'thin';
-    out.segments3 = legs.map(([a, b]) => {
+    const modern=explicitEndpoints(t);
+    const start=endpointOf(t,'start'), end=endpointOf(t,'end');
+    out.segments3 = legs.map(([a, b],index) => {
         const s: Scene3D['segments'][number] = { a: triple(a), b: triple(b), color, width, dashed: !!t.dashed };
-        if (arrow) s.arrow = arrow;
+        if(modern){
+            if(!t.closed)s.arrow=arrowEnds(index===0?start:'none',index===legs.length-1?end:'none');
+        }else if (arrow) s.arrow = arrow;
         return s;
     });
+    if(modern&&!t.closed){
+        out.points3=[];
+        for(const [kind,p] of [[start,pts[0]],[end,pts[pts.length-1]]] as const){
+            if(kind==='dot'||kind==='hollow')out.points3.push({x:p[0],y:p[1],z:p[2],color,size:'normal',part:0,locals:{},...(kind==='hollow'?{hollow:true}:{})});
+        }
+    }
     return out;
 }
 
@@ -3671,7 +3691,7 @@ function scene3D(input: SceneInput3D): Scene3D {
         if (t.hidden) return;
         const formatter = labelFormatter(node, math, scene.issues);
         for (const p of out.points3 || []) {
-            const point: Scene3D['points'][number] = { x: p.x, y: p.y, z: p.z, color: p.color, size: p.size };
+            const point: Scene3D['points'][number] = { x: p.x, y: p.y, z: p.z, color: p.color, size: p.size, ...(p.hollow?{hollow:true}:{}) };
             const label = formatter({ template: 'label', part: p.part, locals: p.locals });
             if (label.trim()) point.label = label;
             scene.points.push(point);

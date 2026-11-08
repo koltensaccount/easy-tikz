@@ -131,6 +131,7 @@ export type ArrowStyle = 'none' | 'forward' | 'backward' | 'both';
 export type SegmentStyle = 'line' | 'forward' | 'backward' | 'both' | 'brace';
 export type OutlineStyle = 'none' | 'solid' | 'dashed';
 export type MarkerSize = 'small' | 'normal' | 'large';
+export type EndpointStyle = 'none' | 'arrow' | 'dot' | 'hollow';
 
 export interface ToolBase {
     /** Stable id (UI keys, caches). Random for new tools, `t<index>` for migrated ones. */
@@ -216,6 +217,7 @@ export interface PointsTool extends ToolBase {
     /** Dashed guide lines from each point to the axes (2D only). */
     dropLines: boolean;
     size: MarkerSize;
+    hollow?: boolean;
 }
 
 export interface SegmentTool extends ToolBase {
@@ -231,6 +233,8 @@ export interface SegmentTool extends ToolBase {
     closed: boolean;
     /** Arrow styles apply to every leg; brace uses the first two points only. */
     style: SegmentStyle;
+    start?: EndpointStyle;
+    end?: EndpointStyle;
     thickness: string;
     dashed: boolean;
     /** Template drawn beside the middle of the path / brace ('' = none). */

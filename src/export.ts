@@ -806,10 +806,10 @@ function addMarkers(layers: Layers, item: SceneItem2D, colors: ColorSet, view: V
         if (!finitePt(m) || !inView(m, view, 0)) continue;
         const c = colors.use(m.color);
         const size = MARK_SIZE[m.size] || MARK_SIZE.normal;
-        const key = `${c}|${size}|${m.dim ? 1 : 0}`;
+        const key = `${c}|${size}|${m.dim ? 1 : 0}|${m.hollow ? 1 : 0}`;
         let g = groups.length ? groups[groups.length - 1] : null;
         if (!g || g.key !== key) {
-            const opts = ['only marks', 'mark=*', `mark size=${size}`, c, 'mark options={draw=white, line width=0.4pt}'];
+            const opts = ['only marks', 'mark=*', `mark size=${size}`, c, m.hollow ? `mark options={fill=white, draw=${c}, line width=0.6pt}` : 'mark options={draw=white, line width=0.4pt}'];
             if (m.dim) opts.push(`opacity=${fmtNum(DIM_OPACITY)}`);
             opts.push('forget plot');
             g = { key, opts: opts.join(', '), pts: [] };
@@ -1375,7 +1375,7 @@ function pointCmds(scene: Scene3D, box: Box, colors: ColorSet): string[] {
         if (!in3D(at, box, 0)) continue;
         const c = colors.use(p.color);
         const size = MARK_SIZE[p.size] || MARK_SIZE.normal;
-        out.push(`\\addplot3[only marks, mark=*, mark size=${size}, ${c}, forget plot] coordinates {${tuple3(at)}};`);
+        out.push(`\\addplot3[only marks, mark=*, mark size=${size}, ${c}, ${p.hollow ? `mark options={fill=white, draw=${c}}, ` : ''}forget plot] coordinates {${tuple3(at)}};`);
         const label = labelText(p.label || '');
         if (label) out.push(`\\node[${c}, anchor=south west, font=${FONT.small}] at (axis cs:${tuple3(at).slice(1)} {${label}};`);
     }

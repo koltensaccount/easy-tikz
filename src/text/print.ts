@@ -406,6 +406,7 @@ function toolLine(min: Data, full: Data, ctx: Ctx): string {
         o.take('constraintLines', (v) => (v === true ? 'with constraint lines' : null));
         o.label();
     } else if (type === 'points') {
+        o.take('hollow', v => v === true ? 'hollow' : null);
         o.colour();
         o.take('size', (v) => (v === 'small' || v === 'large' || v === 'normal' ? v : null));
         o.take('dropLines', (v) => (v === true ? 'with lines to the axes' : null));
@@ -413,6 +414,11 @@ function toolLine(min: Data, full: Data, ctx: Ctx): string {
     } else if (type === 'plane3D') {
         o.colour();
         o.take('fillOpacity', (v) => (typeof v === 'number' && Number.isFinite(v) ? `opacity ${v}` : null));
+    } else if(type === 'segment') {
+        o.take('start',v=>typeof v==='string'&&['none','arrow','dot','hollow'].includes(v)?`start ${v}`:null);
+        o.take('end',v=>typeof v==='string'&&['none','arrow','dot','hollow'].includes(v)?`end ${v}`:null);
+        o.common();
+        o.label();
     } else {
         o.common();
         o.label();

@@ -924,6 +924,7 @@ export function createBuildPanel(parent: HTMLElement, host: PanelHost, options: 
         const ctx = recipeContext();
         const groups = new Map<string, Recipe[]>();
         for (const r of recipes(is3D)) {
+            if (r.id === 'arrow' || r.id === 'polyline') continue;
             if (!r.available(ctx)) continue;
             const isFunction = r.section === 'Functions';
             if (scope === 'functions' && !isFunction) continue;
@@ -935,7 +936,7 @@ export function createBuildPanel(parent: HTMLElement, host: PanelHost, options: 
         const heading = (section: string) => {
             if (section === 'Functions') return is3D ? 'Surfaces' : 'Functions';
             if (section === '3D') return 'Shapes in space';
-            return section;
+            return section === 'Segments and arrows' ? 'Lines and paths' : section;
         };
         groups.forEach((list, section) => {
             const id = `etz-${section.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
@@ -943,7 +944,7 @@ export function createBuildPanel(parent: HTMLElement, host: PanelHost, options: 
             for (const r of list) {
                 menu.addItem((i) =>
                     i
-                        .setTitle(r.label)
+                        .setTitle(r.id==='segment'?'Line or path':r.label)
                         .setIcon(SECTION_ICONS[r.section] ?? 'plus')
                         .setSection(id)
                         .onClick(() => applyRecipe(r)),

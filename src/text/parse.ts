@@ -537,11 +537,17 @@ function applyKindOption(b: Builder, kind: string, target: Data, opt: Piece): bo
         return false;
     }
     if (kind === 'curve' || kind === 'segment') {
+        if(kind==='segment'){
+            const endpoint=/^(start|end)\s+(none|arrow|dot|hollow)$/i.exec(opt.text.trim());
+            if(endpoint)return set(target,endpoint[1].toLowerCase(),endpoint[2].toLowerCase());
+        }
         if (lower === 'dashed') return set(target, 'dashed', true);
         if (kind === 'segment' && lower === 'backwards' && target.style === 'forward') return set(target, 'style', 'backward');
         return false;
     }
     if (kind === 'points') {
+        if (lower === 'hollow') return set(target, 'hollow', true);
+        if (lower === 'filled') return set(target, 'hollow', false);
         if (lower === 'small' || lower === 'large' || lower === 'normal') return set(target, 'size', lower);
         if (lower === 'drop lines') return set(target, 'dropLines', true);
         if (lower === 'coordinates') return set(target, 'label', '({x:2}, {y:2})');

@@ -18,6 +18,7 @@ import {
     FunctionParameters,
     Function3DParameters,
     MarkerSize,
+    EndpointStyle,
     OutlineStyle,
     Parameter,
     PlaneTool,
@@ -29,6 +30,7 @@ import {
 } from '../types';
 import { Issue, LABEL_LOCALS, ValidateKind, ValidateResult } from '../mathcontext';
 import { FILL_PATTERN_OPTIONS } from '../colors';
+import { endpointOf } from '../endpoints';
 import type { SceneIssue } from '../scene';
 import { RESERVED_NAMES, RecipeContext, defaultTool, recipes } from '../migrate';
 import { CardActions, PanelHost } from './host';
@@ -1481,6 +1483,13 @@ class PointsCard extends ToolCard<PointsTool> {
             },
         });
         sizeField.bind(size.el);
+        const fillField=field(body,{label:'Fill',layout:'inline'});
+        const fill=segmented<'filled'|'hollow'>(fillField.controlEl,{
+            label:'Point fill',value:t.hollow?'hollow':'filled',
+            options:[{value:'filled',text:'Filled'},{value:'hollow',text:'Hollow'}],
+            onChange:v=>{if(v==='hollow')t.hollow=true;else delete t.hollow;this.changed();},
+        });
+        fillField.bind(fill.el);
         if (!this.is3D()) {
             this.dropLinesChip = chip(sizeField.controlEl, {
                 label: 'Drop lines',
@@ -1496,6 +1505,7 @@ class PointsCard extends ToolCard<PointsTool> {
             this.sourceSeg.setValue(t.source);
             this.senseSeg.setValue(t.sense);
             size.setValue(t.size);
+            fill.setValue(t.hollow?'hollow':'filled');
             if (this.dropLinesChip) this.dropLinesChip.setValue(t.dropLines);
             // Custom mode survives a refresh even while its text is blank or still
             // the coordinates template it started from (the user is editing it).
@@ -1671,15 +1681,12 @@ class SegmentCard extends ToolCard<SegmentTool> {
         // Braces are 2D only; a 3D segment keeps the option only while it is selected.
         const styles: Array<SegmentOption<SegmentStyle>> = [
             { value: 'line', text: 'Line' },
-            { value: 'forward', icon: 'arrow-right', ariaLabel: 'Arrow at the end' },
-            { value: 'backward', icon: 'arrow-left', ariaLabel: 'Arrow at the start' },
-            { value: 'both', icon: 'move-horizontal', ariaLabel: 'Arrows at both ends' },
             { value: 'brace', text: 'Brace' },
         ];
         const styleField = field(this.body, { label: 'Style', layout: 'inline' });
         const style = segmented<SegmentStyle>(styleField.controlEl, {
             label: 'Style',
-            value: t.style,
+            value: t.style==='brace'?'brace':'line',
             options: is3D ? styles.filter((s) => s.value !== 'brace' || t.style === 'brace') : styles,
             onChange: (v) => {
                 t.style = v;
@@ -1687,6 +1694,19 @@ class SegmentCard extends ToolCard<SegmentTool> {
             },
         });
         styleField.bind(style.el);
+        const ends=(['start','end'] as const).map(side=>{
+            const row=field(this.body,{label:side==='start'?'Start':'End',layout:'inline'});
+            const control=dropdown<EndpointStyle>(row.controlEl,{
+                label:side==='start'?'Start endpoint':'End endpoint',value:endpointOf(t,side),
+                options:[{value:'none',text:'None'},{value:'arrow',text:'Arrowhead'},{value:'dot',text:'Filled dot'},{value:'hollow',text:'Hollow dot'}],
+                onChange:value=>{
+                    const start=endpointOf(t,'start'),end=endpointOf(t,'end');
+                    t.start=start;t.end=end;t[side]=value;t.style='line';this.changed();
+                },
+            });
+            row.bind(control.el);
+            return {side,control};
+        });
 
         this.lineRow({
             thickness: () => t.thickness,
@@ -1711,7 +1731,10 @@ class SegmentCard extends ToolCard<SegmentTool> {
             ],
         });
         this.labelField('optional, e.g. width');
-        this.onSync(() => style.setValue(t.style));
+        this.onSync(() => {
+            style.setValue(t.style==='brace'?'brace':'line');
+            for(const {side,control} of ends){control.setValue(endpointOf(t,side));control.setDisabled(t.style==='brace'||t.closed);}
+        });
     }
 
     protected summary(): string {

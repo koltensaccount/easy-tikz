@@ -1254,8 +1254,8 @@ export class SVGRenderer {
             cx: num(this.sx(m.x)),
             cy: num(this.sy(m.y)),
             r: String(r),
-            fill: this.css(m.color),
-            stroke: BACKGROUND,
+            fill: m.hollow ? BACKGROUND : this.css(m.color),
+            stroke: m.hollow ? this.css(m.color) : BACKGROUND,
             'stroke-width': this.compact ? '1' : '1.5',
         };
         if (m.dim) attrs.opacity = '0.45';

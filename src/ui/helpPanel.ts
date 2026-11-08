@@ -359,7 +359,7 @@ const SECTIONS: Section[] = [
             'A segment joins points separated by `;`, for example `(0, 0); (3, 2)`. Coordinates may be formulas, and the name of a points tool inserts its points: `(0, 0); P1`.',
             {
                 list: [
-                    'Style: line, arrow forward, backward or both, or brace.',
+                    'Choose a line/path or brace. Open paths have independent Start and End choices: None, Arrowhead, Filled dot, or Hollow dot. Closed polygons have no endpoints.',
                     '**Closed** joins the last point back to the first (a polygon outline).',
                     'A brace uses the first two points and bulges to the left of the direction from the first point to the second. Swap the points to flip it.',
                     'The label (a template) sits beside the middle of the path.',

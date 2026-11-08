@@ -1065,6 +1065,7 @@ function completePoints(src: Record<string, unknown>, ctx: ConvertContext): Poin
         label: str(src.label, d.label),
         dropLines: bool(src.dropLines, d.dropLines),
         size: oneOf(src.size, MARKER_SIZES, d.size),
+        ...(src.hollow === true ? { hollow: true } : {}),
     };
 }
 
@@ -1077,6 +1078,8 @@ function completeSegment(src: Record<string, unknown>, ctx: ConvertContext): Seg
         path: str(src.path, d.path),
         closed: bool(src.closed, d.closed),
         style: oneOf(src.style, SEGMENT_STYLES, d.style),
+        ...(typeof src.start === 'string' && ['none','arrow','dot','hollow'].includes(src.start) ? { start: src.start as import('./types').EndpointStyle } : {}),
+        ...(typeof src.end === 'string' && ['none','arrow','dot','hollow'].includes(src.end) ? { end: src.end as import('./types').EndpointStyle } : {}),
         thickness: thicknessOf(src.thickness, d.thickness),
         dashed: bool(src.dashed, d.dashed),
         label: str(src.label, d.label),
@@ -1711,8 +1714,8 @@ function recipes2D(): Recipe[] {
         {
             id: 'segment',
             section: 'Segments and arrows',
-            label: 'Line segment',
-            hint: 'A straight segment between two points.',
+            label: 'Line or path',
+            hint: 'Connect points, then choose what appears at the start and end. Closed joins a polygon.',
             available: in2D,
             build: (ctx) => segmentRecipe(ctx, { path: '(1, 1); (4, 3)' }),
         },
