@@ -262,6 +262,7 @@ export function computeTickPlan(
         majorTickNum?: number;
         equalScale?: boolean;
         polar?: boolean;
+        coordinateSystem?: string;
         tickFormatX?: 'auto' | 'numeric' | 'pi';
         tickFormatY?: 'auto' | 'numeric' | 'pi';
         xLabel?: string;
@@ -280,7 +281,7 @@ export function computeTickPlan(
 
     const dx = view.xmax - view.xmin;
     const dy = view.ymax - view.ymin;
-    const equal = !!(config.equalScale || config.polar);
+    const equal = !!(config.equalScale || config.polar || config.coordinateSystem === 'polar');
 
     const plotW = config.width && config.width > 0 ? config.width * 0.85 : 650;
     const plotH = config.height && config.height > 0 ? config.height * 0.8 : 380;

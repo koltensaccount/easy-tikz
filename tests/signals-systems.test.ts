@@ -640,6 +640,86 @@ test('computeTickPlan ensures identical tick steps and values across preview and
 });
 
 // ---------------------------------------------------------------------------
+// Polar Coordinate & Equal Scale Tick Policy
+// ---------------------------------------------------------------------------
+
+test('computeTickPlan respects polar coordinateSystem and equalScale policies', () => {
+    // 1. Polar chart with coordinateSystem: 'polar' and equalScale: false
+    // dx = 20, dy = 6. In polar mode, ticks must maintain equal spacing (stepX === stepY).
+    const polarExplicitFalse = computeTickPlan(
+        {
+            coordinateSystem: 'polar',
+            equalScale: false,
+            width: 760,
+            height: 480,
+            xLabel: '',
+            yLabel: '',
+        },
+        { xmin: -10, xmax: 10, ymin: -3, ymax: 3 }
+    );
+    assert.equal(polarExplicitFalse.stepX, polarExplicitFalse.stepY, 'polar with equalScale: false uses equal tick spacing');
+
+    // 2. Polar chart with equalScale omitted
+    const polarOmitted = computeTickPlan(
+        {
+            coordinateSystem: 'polar',
+            width: 760,
+            height: 480,
+            xLabel: '',
+            yLabel: '',
+        },
+        { xmin: -10, xmax: 10, ymin: -3, ymax: 3 }
+    );
+    assert.equal(polarOmitted.stepX, polarOmitted.stepY, 'polar with equalScale omitted uses equal tick spacing');
+
+    // 3. Cartesian chart with equalScale: false allows independent X/Y intervals
+    const cartesianIndependent = computeTickPlan(
+        {
+            coordinateSystem: 'cartesian',
+            equalScale: false,
+            width: 760,
+            height: 480,
+            xLabel: 'x',
+            yLabel: 'y',
+        },
+        { xmin: -10, xmax: 10, ymin: -2, ymax: 2 }
+    );
+    assert.notEqual(cartesianIndependent.stepX, cartesianIndependent.stepY, 'cartesian with equalScale: false allows independent X and Y steps');
+
+    // 4. Cartesian chart with equalScale: true preserves equal-spacing behavior
+    const cartesianEqual = computeTickPlan(
+        {
+            coordinateSystem: 'cartesian',
+            equalScale: true,
+            width: 760,
+            height: 480,
+            xLabel: 'x',
+            yLabel: 'y',
+        },
+        { xmin: -10, xmax: 10, ymin: -2, ymax: 2 }
+    );
+    assert.equal(cartesianEqual.stepX, cartesianEqual.stepY, 'cartesian with equalScale: true enforces equal tick spacing');
+
+    // 5. Polar chart via SettingsManager toRendererConfig produces consistent equal steps
+    const smPolar = SettingsManager.fromJSON({
+        v: 4,
+        coordinateSystem: 'polar',
+        xmin: '-5',
+        xmax: '5',
+        ymin: '-2',
+        ymax: '2',
+        size_x_cm: 10,
+        size_y_cm: 10,
+    });
+    const cfgPolar = smPolar.toRendererConfig();
+    assert.equal(cfgPolar.coordinateSystem, 'polar');
+    const planPolar = computeTickPlan(cfgPolar, { xmin: cfgPolar.xmin, xmax: cfgPolar.xmax, ymin: cfgPolar.ymin, ymax: cfgPolar.ymax });
+    assert.equal(planPolar.stepX, planPolar.stepY, 'SettingsManager polar config produces equal stepX and stepY');
+    const tikzPolar = smPolar.generateTikzCode();
+    assert.ok(tikzPolar.includes('axis equal image'), 'TikZ export includes axis equal image for polar');
+});
+
+// ---------------------------------------------------------------------------
 // Unit Step Recipe Discontinuity Verification
 // ---------------------------------------------------------------------------
 
