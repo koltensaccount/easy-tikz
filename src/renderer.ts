@@ -13,7 +13,7 @@
 import { AnnotationSize, FillPattern, FunctionParameters, MarkerSize, RendererConfig, Tool } from './types';
 import { COLOR_MAP, THICKNESS_MAP, mixHex, resolveCssColor } from './colors';
 import { niceInterval, formatTick, marchingGrid, sampleCurve, stripLatex, tickValues } from './util';
-import { formatPiTick, shouldUsePiTicks } from './signals';
+import { formatPiTick, isPiAxis, nextPiStep, piTickStep, piTickValues, shouldUsePiTicks } from './signals';
 import { extractMathSource, renderMathLabel, flushMathRenders } from './mathlabel';
 import { FunctionInfo, FunctionKind, MathContext, labelDisplayText } from './mathcontext';
 import {
@@ -485,10 +485,10 @@ export class SVGRenderer {
         const tickFs = this.fontPx(TICK_PT);
         const axisFs = this.fontPx(AXIS_LABEL_PT);
         const pt = (n: number) => n * this.ptPx;
-        const ys = tickValues(v.ymin, v.ymax, stepY);
-        const xs = tickValues(v.xmin, v.xmax, stepX);
-        const usePiX = shouldUsePiTicks(xs, cfg.tickFormatX);
-        const usePiY = shouldUsePiTicks(ys, cfg.tickFormatY);
+        const usePiX = this.isPiX();
+        const usePiY = this.isPiY();
+        const ys = usePiY ? piTickValues(v.ymin, v.ymax, stepY) : tickValues(v.ymin, v.ymax, stepY);
+        const xs = usePiX ? piTickValues(v.xmin, v.xmax, stepX) : tickValues(v.xmin, v.xmax, stepX);
         const formatX = (x: number) => (usePiX ? formatPiTick(x) ?? formatTick(x) : formatTick(x));
         const formatY = (y: number) => (usePiY ? formatPiTick(y) ?? formatTick(y) : formatTick(y));
         const yTickW = ys.reduce((m, y) => Math.max(m, formatY(y).length * tickFs * CHAR_WIDTH_EM), 0);
@@ -570,28 +570,56 @@ export class SVGRenderer {
      * (1, 2, 5, 10, ...) until the tick labels, set at the PDF's size, have
      * room: pgfplots spaces its ticks out the same way.
      */
+    private isPiX(): boolean {
+        return isPiAxis(
+            this.config.tickFormatX,
+            this.config.xLabel,
+            this.config.rawRanges?.xmin,
+            this.config.rawRanges?.xmax,
+            this.config.functions?.map((f) => f.expression)
+        );
+    }
+
+    private isPiY(): boolean {
+        return isPiAxis(
+            this.config.tickFormatY,
+            this.config.yLabel,
+            this.config.rawRanges?.ymin,
+            this.config.rawRanges?.ymax,
+            this.config.functions?.map((f) => f.expression)
+        );
+    }
+
     private computeTickSteps(): [number, number] {
         const v = this.view;
         const target = this.config.majorTickNum > 0 ? this.config.majorTickNum : DEFAULT_TARGET_TICKS_X;
         const dx = v.xmax - v.xmin;
         const dy = v.ymax - v.ymin;
         const equal = this.config.equalScale || this.polar;
-        let sx = equal ? niceInterval(Math.max(dx, dy), target) : niceInterval(dx, target);
-        let sy = equal ? sx : niceInterval(dy, Math.max(2, Math.round(target * Y_TICK_RATIO)));
+        const piX = this.isPiX();
+        const piY = this.isPiY();
+
+        let sx = piX ? piTickStep(dx, target) : (equal ? niceInterval(Math.max(dx, dy), target) : niceInterval(dx, target));
+        let sy = piY ? piTickStep(dy, Math.max(2, Math.round(target * Y_TICK_RATIO))) : (equal ? sx : niceInterval(dy, Math.max(2, Math.round(target * Y_TICK_RATIO))));
         if (this.compact) return [sx, sy];
+
         // Roughly the plot size; the paddings follow from these steps, so the exact plot is not known yet.
         const plotW = this.width * 0.85;
         const plotH = this.height * 0.8;
         const fs = this.fontPx(TICK_PT);
+        const formatX = (x: number) => (piX ? formatPiTick(x) ?? formatTick(x) : formatTick(x));
+        const formatY = (y: number) => (piY ? formatPiTick(y) ?? formatTick(y) : formatTick(y));
+
         const fitsX = (step: number) => {
-            const ticks = tickValues(v.xmin, v.xmax, step);
-            const widest = ticks.reduce((m, t) => Math.max(m, formatTick(t).length), 1) * fs * CHAR_WIDTH_EM;
+            const ticks = piX ? piTickValues(v.xmin, v.xmax, step) : tickValues(v.xmin, v.xmax, step);
+            const widest = ticks.reduce((m, t) => Math.max(m, formatX(t).length), 1) * fs * CHAR_WIDTH_EM;
             return ticks.length < 2 || (plotW * step) / dx >= widest + fs * 0.8;
         };
         const fitsY = (step: number) => (plotH * step) / dy >= fs * 1.6;
-        for (let k = 0; k < 8 && !(fitsX(sx) && (!equal || fitsY(sx))); k++) sx = nextNiceStep(sx);
+
+        for (let k = 0; k < 8 && !(fitsX(sx) && (!equal || fitsY(sx))); k++) sx = piX ? nextPiStep(sx) : nextNiceStep(sx);
         if (equal) return [sx, sx];
-        for (let k = 0; k < 8 && !fitsY(sy); k++) sy = nextNiceStep(sy);
+        for (let k = 0; k < 8 && !fitsY(sy); k++) sy = piY ? nextPiStep(sy) : nextNiceStep(sy);
         return [sx, sy];
     }
 
@@ -948,6 +976,8 @@ export class SVGRenderer {
         const v = this.view;
         const { x: left, y: top, w, h } = this.plot;
         const [stepX, stepY] = this.tickSteps();
+        const usePiX = this.isPiX();
+        const usePiY = this.isPiY();
         const draw = (xs: number[], ys: number[], width: string, opacity: string) => {
             const attrs = { stroke: BORDER, 'stroke-width': width, 'stroke-opacity': opacity };
             for (const x of xs) g.appendChild(this.line(this.sx(x), top, this.sx(x), top + h, attrs));
@@ -955,14 +985,13 @@ export class SVGRenderer {
         };
         const minor = Math.round(Number(cfg.minorTickNum));
         if (cfg.gridMinor && minor >= 1) {
-            draw(
-                tickValues(v.xmin, v.xmax, stepX / (minor + 1)),
-                tickValues(v.ymin, v.ymax, stepY / (minor + 1)),
-                '0.5',
-                '0.25'
-            );
+            const xsMinor = usePiX ? piTickValues(v.xmin, v.xmax, stepX / (minor + 1)) : tickValues(v.xmin, v.xmax, stepX / (minor + 1));
+            const ysMinor = usePiY ? piTickValues(v.ymin, v.ymax, stepY / (minor + 1)) : tickValues(v.ymin, v.ymax, stepY / (minor + 1));
+            draw(xsMinor, ysMinor, '0.5', '0.25');
         }
-        draw(tickValues(v.xmin, v.xmax, stepX), tickValues(v.ymin, v.ymax, stepY), '0.75', '0.35');
+        const xsMajor = usePiX ? piTickValues(v.xmin, v.xmax, stepX) : tickValues(v.xmin, v.xmax, stepX);
+        const ysMajor = usePiY ? piTickValues(v.ymin, v.ymax, stepY) : tickValues(v.ymin, v.ymax, stepY);
+        draw(xsMajor, ysMajor, '0.75', '0.35');
         this.attach(svg, g);
     }
 
@@ -996,8 +1025,10 @@ export class SVGRenderer {
         const right = left + w;
         const bottom = top + h;
         const [stepX, stepY] = this.tickSteps();
-        const xs = this.compact ? [] : tickValues(v.xmin, v.xmax, stepX);
-        const ys = this.compact ? [] : tickValues(v.ymin, v.ymax, stepY);
+        const usePiX = this.isPiX();
+        const usePiY = this.isPiY();
+        const xs = this.compact ? [] : (usePiX ? piTickValues(v.xmin, v.xmax, stepX) : tickValues(v.xmin, v.xmax, stepX));
+        const ys = this.compact ? [] : (usePiY ? piTickValues(v.ymin, v.ymax, stepY) : tickValues(v.ymin, v.ymax, stepY));
         const tickAttrs = { stroke: TEXT_MUTED, 'stroke-width': '1' };
         const axisWidth = this.compact ? 1 : 1.5;
         const axisAttrs = { stroke: TEXT_MUTED, 'stroke-width': String(axisWidth) };
@@ -1019,8 +1050,6 @@ export class SVGRenderer {
             g.appendChild(this.line(x1, y1, ex, ey, { ...axisAttrs, 'marker-end': this.arrow(TEXT_MUTED, axisWidth) }));
         };
         const tick = (x1: number, y1: number, x2: number, y2: number) => g.appendChild(this.line(x1, y1, x2, y2, tickAttrs));
-        const usePiX = shouldUsePiTicks(xs, cfg.tickFormatX);
-        const usePiY = shouldUsePiTicks(ys, cfg.tickFormatY);
         const formatX = (x: number) => (usePiX ? formatPiTick(x) ?? formatTick(x) : formatTick(x));
         const formatY = (y: number) => (usePiY ? formatPiTick(y) ?? formatTick(y) : formatTick(y));
         // x tick labels hang below (x, y); y tick labels end at (x, y), centred on it.

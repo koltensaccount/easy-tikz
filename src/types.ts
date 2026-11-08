@@ -274,6 +274,7 @@ export interface RendererConfig {
     majorTickNum: number;
     tickFormatX?: 'auto' | 'numeric' | 'pi';
     tickFormatY?: 'auto' | 'numeric' | 'pi';
+    rawRanges?: { xmin: string; xmax: string; ymin: string; ymax: string };
     functions: FunctionParameters[];
     annotations: Annotation[];
     /** Already migrated (v4 shapes only). */

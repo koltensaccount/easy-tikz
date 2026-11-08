@@ -1185,6 +1185,16 @@ function assertStructurallyValid(ctx: RecipeContext, id: string): void {
             if (res.tool.type === 'points' || res.tool.type === 'segment') assert.equal(res.tool.dim, ctx.is3D ? 3 : 2, id);
             break;
         }
+        case 'tools': {
+            const normalized = normalizeTools(res.tools, { is3D: ctx.is3D });
+            assert.deepEqual(normalized, res.tools, id);
+            for (const t of res.tools) {
+                assert.ok(!names.has(t.name), `${id}: name clash`);
+                assert.ok(!ctx.tools.some((existing) => existing.id === t.id), `${id}: id clash`);
+                if (t.type === 'points' || t.type === 'segment') assert.equal(t.dim, ctx.is3D ? 3 : 2, id);
+            }
+            break;
+        }
         case 'parameter':
             assert.deepEqual(normalizeParameters([res.parameter]), [res.parameter], id);
             assert.ok(!names.has(res.parameter.name), `${id}: name clash`);

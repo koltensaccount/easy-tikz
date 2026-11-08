@@ -12,7 +12,7 @@ import { MathContext, renameIdentifier, renameToolReferences } from './mathconte
 import { SceneCache, SceneIssue } from './scene';
 import { View } from './geometry';
 import { EXAMPLES, defaultParameter, newId, nextToolName } from './migrate';
-import { SnapResult, findSnapCandidate, formatCoord } from './signals';
+import { SnapResult, findSnapCandidate, formatCoord, isPiAxis, piTickStep } from './signals';
 import type { ChartDraft } from './templates';
 import type { BlockFormat } from './blockjson';
 import { isChartText } from './text/parse';
@@ -1704,6 +1704,9 @@ export class TikzModal extends Modal implements PanelHost {
                 const mathPt = this.toMath(e.clientX, e.clientY);
                 if (mathPt) {
                     const snap = this.getSnapCandidate(mathPt, e.shiftKey);
+                    if (!snap && (mathPt.fx < -0.05 || mathPt.fx > 1.05 || mathPt.fy < -0.05 || mathPt.fy > 1.05)) {
+                        return;
+                    }
                     const finalPt: Pt = snap ? snap.point : { x: mathPt.x, y: mathPt.y };
                     if (this.drawMode === 'point') {
                         const taken = this.takenNames();
@@ -1887,16 +1890,20 @@ export class TikzModal extends Modal implements PanelHost {
             if (this.drawMode !== 'select') {
                 const mathPt = this.toMath(e.clientX, e.clientY);
                 if (mathPt) {
-                    const snap = this.getSnapCandidate(mathPt, e.shiftKey);
-                    const activePt: Pt = snap ? snap.point : { x: mathPt.x, y: mathPt.y };
-                    if (snap) {
-                        this.dragLayer?.snap(snap.screen);
-                    } else {
+                    if (mathPt.fx < -0.05 || mathPt.fx > 1.05 || mathPt.fy < -0.05 || mathPt.fy > 1.05) {
                         this.dragLayer?.snap(null);
-                    }
-                    if (this.drawPoints.length > 0) {
-                        const previewPath = [...this.drawPoints, activePt];
-                        this.dragLayer?.ghost([previewPath], this.drawPoints);
+                    } else {
+                        const snap = this.getSnapCandidate(mathPt, e.shiftKey);
+                        const activePt: Pt = snap ? snap.point : { x: mathPt.x, y: mathPt.y };
+                        if (snap) {
+                            this.dragLayer?.snap(snap.screen);
+                        } else {
+                            this.dragLayer?.snap(null);
+                        }
+                        if (this.drawPoints.length > 0) {
+                            const previewPath = [...this.drawPoints, activePt];
+                            this.dragLayer?.ghost([previewPath], this.drawPoints);
+                        }
                     }
                 } else {
                     this.dragLayer?.snap(null);
@@ -3542,8 +3549,21 @@ export class TikzModal extends Modal implements PanelHost {
             const vy = layout.plot.y + fy * layout.plot.h;
             return { x: box.ox + vx * box.s, y: box.oy + vy * box.s };
         };
-        const stepX = niceInterval(v.xmax - v.xmin, 8);
-        const stepY = niceInterval(v.ymax - v.ymin, 8);
+        const tickFormatX = this.settings.getValue<'auto' | 'numeric' | 'pi'>('tickFormatX') || 'auto';
+        const tickFormatY = this.settings.getValue<'auto' | 'numeric' | 'pi'>('tickFormatY') || 'numeric';
+        const labelX = String(this.settings.getValue('axis_label_x') ?? 'x');
+        const labelY = String(this.settings.getValue('axis_label_y') ?? 'y');
+        const rawXmin = String(this.settings.getValue('xmin') ?? '');
+        const rawXmax = String(this.settings.getValue('xmax') ?? '');
+        const rawYmin = String(this.settings.getValue('ymin') ?? '');
+        const rawYmax = String(this.settings.getValue('ymax') ?? '');
+        const formulas = this.list<FunctionParameters>('functions').map(f => f.expression || '');
+
+        const isPiX = isPiAxis(tickFormatX, labelX, rawXmin, rawXmax, formulas);
+        const isPiY = isPiAxis(tickFormatY, labelY, rawYmin, rawYmax, formulas);
+
+        const stepX = isPiX ? piTickStep(v.xmax - v.xmin, 8) : niceInterval(v.xmax - v.xmin, 8);
+        const stepY = isPiY ? piTickStep(v.ymax - v.ymin, 8) : niceInterval(v.ymax - v.ymin, 8);
         return findSnapCandidate(cursorMath, {
             view: v,
             stepX,

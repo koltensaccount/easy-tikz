@@ -6,11 +6,16 @@ import {
     parseSequenceToPoints,
     findSnapCandidate,
     formatCoord,
+    piTickStep,
+    nextPiStep,
+    piTickValues,
+    isPiAxis,
 } from '../src/signals';
 import { computeScene2D } from '../src/scene';
 import { MathContext } from '../src/mathcontext';
 import { PointsTool, SegmentTool } from '../src/types';
 import { SettingsManager } from '../src/settings';
+import { recipes } from '../src/migrate';
 
 // ---------------------------------------------------------------------------
 // π Tick Formatting & Auto-detection
@@ -257,4 +262,154 @@ test('SettingsManager generates TikZ code with π tick labels when active', () =
     assert.ok(tikz.includes('xticklabels='), 'xticklabels present');
     assert.ok(tikz.includes('\\pi'), 'pi tick labels present in TikZ export');
     assert.ok(tikz.includes('draw='), 'stem draws present');
+});
+
+// ---------------------------------------------------------------------------
+// π Tick Generation & Steps
+// ---------------------------------------------------------------------------
+
+test('piTickStep chooses rational π step based on span', () => {
+    // Span 14 (e.g. -7 to 7, targetCount 5) -> step should be Math.PI
+    const step14 = piTickStep(14, 5);
+    near(step14, Math.PI, 1e-4);
+
+    // Span 7 (e.g. -3.5 to 3.5, targetCount 5) -> step should be Math.PI / 2
+    const step7 = piTickStep(7, 5);
+    near(step7, Math.PI / 2, 1e-4);
+
+    // Span 3 (e.g. -1.5 to 1.5, targetCount 5) -> step should be Math.PI / 6, Math.PI / 4, or Math.PI / 3
+    const step3 = piTickStep(3, 5);
+    assert.ok(step3 === Math.PI / 6 || step3 === Math.PI / 4 || step3 === Math.PI / 3);
+
+    // nextPiStep widens to the next standard pi increment
+    const wider = nextPiStep(Math.PI / 2);
+    near(wider, Math.PI, 1e-4);
+});
+
+test('piTickValues produces exact multiples of pi step within range', () => {
+    const ticks = piTickValues(-7, 7, Math.PI);
+    // Multiples: -2*pi (-6.28), -pi (-3.14), 0, pi (3.14), 2*pi (6.28)
+    assert.equal(ticks.length, 5);
+    near(ticks[0], -2 * Math.PI, 1e-4);
+    near(ticks[1], -Math.PI, 1e-4);
+    near(ticks[2], 0, 1e-4);
+    near(ticks[3], Math.PI, 1e-4);
+    near(ticks[4], 2 * Math.PI, 1e-4);
+});
+
+test('isPiAxis detects explicit and auto conditions', () => {
+    assert.equal(isPiAxis('pi', 'x', '-5', '5'), true);
+    assert.equal(isPiAxis('numeric', 'x', '-pi', 'pi'), false);
+    assert.equal(isPiAxis('auto', '\\omega', '-5', '5'), true);
+    assert.equal(isPiAxis('auto', 'theta', '-5', '5'), true);
+    assert.equal(isPiAxis('auto', 'x', '-2*pi', '2*pi'), true);
+    assert.equal(isPiAxis('auto', 'x', '-5', '5', ['sin(2*pi*x)']), true);
+    assert.equal(isPiAxis('auto', 'x', '-5', '5', ['x^2']), false);
+});
+
+// ---------------------------------------------------------------------------
+// Snapping Priority Hierarchy
+// ---------------------------------------------------------------------------
+
+test('findSnapCandidate enforces strict priority tiers', () => {
+    const toScreen = (p: { x: number; y: number }) => ({ x: 200 + p.x * 50, y: 200 - p.y * 50 });
+    const view = { xmin: -4, xmax: 4, ymin: -4, ymax: 4 };
+
+    // Tier 1: Shift-constraint locks to horizontal line, even when near a competing grid point
+    const shiftSnap = findSnapCandidate(
+        { x: 1.05, y: 2.08 },
+        {
+            view,
+            stepX: 1,
+            stepY: 1,
+            toScreen,
+            existingPoints: [{ x: 1, y: 2 }],
+            lastPoint: { x: 0, y: 2.08 },
+            shiftHeld: true,
+            thresholdPx: 12,
+        }
+    );
+    assert.ok(shiftSnap !== null);
+    assert.equal(shiftSnap!.kind, 'shift');
+    near(shiftSnap!.point.y, 2.08, 1e-4);
+
+    // Tier 2: Existing point has priority over Origin when cursor is closer to existing point
+    const ptNearOrigin = findSnapCandidate(
+        { x: 0.04, y: 0.04 },
+        {
+            view,
+            stepX: 1,
+            stepY: 1,
+            toScreen,
+            existingPoints: [{ x: 0.04, y: 0.04 }],
+            lastPoint: null,
+            shiftHeld: false,
+            thresholdPx: 12,
+        }
+    );
+    assert.ok(ptNearOrigin !== null);
+    assert.equal(ptNearOrigin!.kind, 'point');
+    near(ptNearOrigin!.point.x, 0.04, 1e-4);
+
+    // Snap disabled returns null
+    const noSnap = findSnapCandidate(
+        { x: 0.01, y: 0.01 },
+        {
+            view,
+            stepX: 1,
+            stepY: 1,
+            toScreen,
+            existingPoints: [],
+            lastPoint: null,
+            shiftHeld: false,
+            snapEnabled: false,
+            thresholdPx: 12,
+        }
+    );
+    assert.equal(noSnap, null);
+});
+
+// ---------------------------------------------------------------------------
+// Unit Step Recipe Discontinuity Verification
+// ---------------------------------------------------------------------------
+
+test('unit-step recipe creates two discontinuous segments without vertical connector', () => {
+    const r = recipes(false).find((rec) => rec.id === 'unit-step');
+    assert.ok(r !== undefined);
+    const result = r!.build({ is3D: false, functions: [], tools: [], parameters: [] });
+    assert.equal(result.kind, 'tools');
+    if (result.kind === 'tools') {
+        assert.equal(result.tools.length, 2);
+        const seg1 = result.tools[0] as SegmentTool;
+        const seg2 = result.tools[1] as SegmentTool;
+        assert.equal(seg1.type, 'segment');
+        assert.equal(seg2.type, 'segment');
+        assert.equal(seg1.end, 'hollow', 'Segment 1 ends with hollow point at (0, 0)');
+        assert.equal(seg2.start, 'dot', 'Segment 2 starts with solid dot at (0, 1)');
+        assert.equal(seg2.label, 'u(t)');
+        // Ensure path does not contain vertical jump connector (0, 0) -> (0, 1) in a single segment
+        assert.ok(!seg1.path.includes('(0, 1)'));
+        assert.ok(!seg2.path.includes('(0, 0)'));
+    }
+});
+
+// ---------------------------------------------------------------------------
+// TikZ Export Parity for Y-Axis π Ticks
+// ---------------------------------------------------------------------------
+
+test('SettingsManager exports ytick and yticklabels with \\pi when tickFormatY is pi', () => {
+    const s = SettingsManager.fromJSON({
+        v: 4,
+        xmin: '-2',
+        xmax: '2',
+        ymin: '-3.142',
+        ymax: '3.142',
+        tickFormatY: 'pi',
+        axis_style: 'middle',
+    });
+
+    const tikz = s.generateTikzCode();
+    assert.ok(tikz.includes('ytick='), 'ytick present');
+    assert.ok(tikz.includes('yticklabels='), 'yticklabels present');
+    assert.ok(tikz.includes('$\\pi$') || tikz.includes('\\pi'), 'pi tick labels present on y-axis export');
 });

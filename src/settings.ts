@@ -312,6 +312,12 @@ export class SettingsManager {
             majorTickNum: numberValue(this.getValue('majorTickNum'), 8),
             tickFormatX: (this.getValue('tickFormatX') as 'auto' | 'numeric' | 'pi') || 'auto',
             tickFormatY: (this.getValue('tickFormatY') as 'auto' | 'numeric' | 'pi') || 'numeric',
+            rawRanges: {
+                xmin: stringValue(this.getValue('xmin'), ''),
+                xmax: stringValue(this.getValue('xmax'), ''),
+                ymin: stringValue(this.getValue('ymin'), ''),
+                ymax: stringValue(this.getValue('ymax'), ''),
+            },
             functions: arrayValue<FunctionParameters>(this.getValue('functions')),
             annotations: arrayValue<Annotation>(this.getValue('annotations')),
             tools: this.tools(),

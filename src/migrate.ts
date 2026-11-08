@@ -1478,6 +1478,7 @@ export interface RecipeContext {
 export type RecipeResult =
     | { kind: 'function'; fn: FunctionParameters; surface?: Function3DParameters }
     | { kind: 'tool'; tool: Tool }
+    | { kind: 'tools'; tools: Tool[] }
     | { kind: 'label' }
     | { kind: 'parameter'; parameter: Parameter };
 
@@ -1763,7 +1764,26 @@ function recipes2D(): Recipe[] {
             label: 'Unit step u(t)',
             hint: 'Step signal u(t) with jump at 0 and hollow/filled endpoints.',
             available: in2D,
-            build: (ctx) => segmentRecipe(ctx, { path: '(-3, 0); (0, 0); (0, 1); (4, 1)', style: 'line', thickness: 'thick', color: 'blue' }),
+            build: (ctx) => {
+                const seg1: SegmentTool = {
+                    ...newSegment(toolOpts(ctx)),
+                    path: '(-3, 0); (0, 0)',
+                    style: 'line',
+                    thickness: 'thick',
+                    color: 'blue',
+                    end: 'hollow',
+                };
+                const seg2: SegmentTool = {
+                    ...newSegment({ ...toolOpts(ctx), tools: [...ctx.tools, seg1] }),
+                    path: '(0, 1); (4, 1)',
+                    style: 'line',
+                    thickness: 'thick',
+                    color: 'blue',
+                    start: 'dot',
+                    label: 'u(t)',
+                };
+                return { kind: 'tools', tools: [seg1, seg2] };
+            },
         },
         {
             id: 'impulse',

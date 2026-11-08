@@ -29,7 +29,7 @@ import {
     labelMetricsFor,
 } from './scene';
 import { sampleCurve, formatTick, tickValues } from './util';
-import { formatPiLatex, shouldUsePiTicks } from './signals';
+import { formatPiLatex, isPiAxis, piTickStep, piTickValues } from './signals';
 
 // ------------------------------------------------------------------ tuning
 
@@ -568,12 +568,29 @@ export function generateTikz2D(settings: SettingsManager, ctx: MathContext): str
     if (config.gridMinor) opts.push(`grid=both, minor tick num=${Math.max(1, Math.round(num(config.minorTickNum, 5)))}`);
     else if (config.gridMajor) opts.push('grid=major');
 
-    const stepX = (view.xmax - view.xmin) / Math.max(2, num(config.majorTickNum, 8));
-    const xs = tickValues(view.xmin, view.xmax, stepX);
-    if (shouldUsePiTicks(xs, config.tickFormatX)) {
-        const ticks = xs.map((x) => fmtNum(x)).join(', ');
-        const labels = xs.map((x) => formatPiLatex(x) ?? `$${formatTick(x)}$`).join(', ');
-        opts.push(`xtick={${ticks}}, xticklabels={${labels}}`);
+    const targetX = Math.max(2, num(config.majorTickNum, 8));
+    const targetY = Math.max(2, Math.round(targetX * 0.7));
+    const isPiX = isPiAxis(config.tickFormatX, config.xLabel, config.rawRanges?.xmin, config.rawRanges?.xmax, config.functions?.map((f) => f.expression));
+    const isPiY = isPiAxis(config.tickFormatY, config.yLabel, config.rawRanges?.ymin, config.rawRanges?.ymax, config.functions?.map((f) => f.expression));
+
+    if (isPiX) {
+        const stepX = piTickStep(view.xmax - view.xmin, targetX);
+        const xs = piTickValues(view.xmin, view.xmax, stepX);
+        if (xs.length) {
+            const ticks = xs.map((x) => fmtNum(x)).join(', ');
+            const labels = xs.map((x) => formatPiLatex(x) ?? `$${formatTick(x)}$`).join(', ');
+            opts.push(`xtick={${ticks}}, xticklabels={${labels}}`);
+        }
+    }
+
+    if (isPiY) {
+        const stepY = piTickStep(view.ymax - view.ymin, targetY);
+        const ys = piTickValues(view.ymin, view.ymax, stepY);
+        if (ys.length) {
+            const ticks = ys.map((y) => fmtNum(y)).join(', ');
+            const labels = ys.map((y) => formatPiLatex(y) ?? `$${formatTick(y)}$`).join(', ');
+            opts.push(`ytick={${ticks}}, yticklabels={${labels}}`);
+        }
     }
 
     // Without rad, pgfplots evaluates sin(x) in degrees.

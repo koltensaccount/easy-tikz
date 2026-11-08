@@ -716,6 +716,14 @@ export function createBuildPanel(parent: HTMLElement, host: PanelHost, options: 
                 tools().push(result.tool);
                 addItem(result.tool);
                 return;
+            case 'tools':
+                for (const t of result.tools) {
+                    tools().push(t);
+                }
+                if (result.tools.length > 0) {
+                    addItem(result.tools[0]);
+                }
+                return;
             case 'label': {
                 const c = viewCenter();
                 const label: Annotation = {
