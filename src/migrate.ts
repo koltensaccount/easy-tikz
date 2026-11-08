@@ -1086,6 +1086,7 @@ function completeSegment(src: Record<string, unknown>, ctx: ConvertContext): Seg
         style: oneOf(src.style, SEGMENT_STYLES, d.style),
         ...(typeof src.start === 'string' && ['none','arrow','dot','hollow'].includes(src.start) ? { start: src.start as import('./types').EndpointStyle } : {}),
         ...(typeof src.end === 'string' && ['none','arrow','dot','hollow'].includes(src.end) ? { end: src.end as import('./types').EndpointStyle } : {}),
+        ...(src.markerSize !== undefined ? { markerSize: oneOf(src.markerSize, MARKER_SIZES, 'normal') } : {}),
         thickness: thicknessOf(src.thickness, d.thickness),
         dashed: bool(src.dashed, d.dashed),
         label: str(src.label, d.label),

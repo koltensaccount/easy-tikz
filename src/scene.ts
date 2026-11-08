@@ -2015,7 +2015,9 @@ function computeSegmentTool(t: SegmentTool, ctx: Ctx): Output {
         const start=endpointOf(t,'start'), end=endpointOf(t,'end');
         out.strokes.push({lines:[pts],color,width,dashed,exact:true,...(t.closed?{closed:true}:{arrow:arrowEnds(start,end)})});
         if(!t.closed) for(const [kind,p] of [[start,pts[0]],[end,pts[pts.length-1]]] as const){
-            if(kind==='dot'||kind==='hollow')out.markers.push({x:p.x,y:p.y,color,size:'normal',...(kind==='hollow'?{hollow:true}:{})});
+            if (kind === 'dot' || kind === 'hollow') {
+                out.markers.push({ x: p.x, y: p.y, color, size: t.markerSize ?? 'normal', ...(kind === 'hollow' ? { hollow: true } : {}) });
+            }
         }
     } else if (arrow) {
         // Arrow heads on every leg (a simplex path), closing leg included.
@@ -3622,7 +3624,9 @@ function computeSegment3D(t: SegmentTool, ctx: Ctx): Output {
     if(modern&&!t.closed){
         out.points3=[];
         for(const [kind,p] of [[start,pts[0]],[end,pts[pts.length-1]]] as const){
-            if(kind==='dot'||kind==='hollow')out.points3.push({x:p[0],y:p[1],z:p[2],color,size:'normal',part:0,locals:{},...(kind==='hollow'?{hollow:true}:{})});
+            if (kind === 'dot' || kind === 'hollow') {
+                out.points3.push({ x: p[0], y: p[1], z: p[2], color, size: t.markerSize ?? 'normal', part: 0, locals: {}, ...(kind === 'hollow' ? { hollow: true } : {}) });
+            }
         }
     }
     return out;

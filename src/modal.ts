@@ -2,9 +2,11 @@ import { App, MarkdownView, Menu, Modal, Notice, Platform, TFile, loadMathJax } 
 import { cloneData, errorText, fitPixelScale, niceInterval } from './util';
 import { exportableSvg, svgToPng } from './svgExport';
 import { issueText, mergeViewErrors } from './issues';
-import { Annotation, Function3DParameters, FunctionParameters, Parameter, PointsTool, RendererConfig, SegmentTool, Tool } from './types';
+import { Annotation, Function3DParameters, FunctionParameters, Parameter, EndpointStyle, MarkerSize, PointsTool, RendererConfig, SegmentTool, Tool } from './types';
 import { RANGE_DEFAULTS, RangeKey, SettingsManager } from './settings';
 import { centerOrigin } from './appearance';
+import { THICKNESS_OPTIONS } from './colors';
+import { endpointOf } from './endpoints';
 import { RenderLayout, SVGRenderer } from './renderer';
 import { MATH_REDRAW_LIMIT } from './mathlabel';
 import { SVG3DRenderer } from './renderer3d';
@@ -433,6 +435,15 @@ export class TikzModal extends Modal implements PanelHost {
     private ctaBtn: TextButtonHandle | null = null;
 
     // Direct drawing toolbar state
+    private readonly lineStyle: Pick<SegmentTool, 'start' | 'end' | 'markerSize' | 'thickness' | 'dashed'> = {
+        start: 'none', end: 'none', markerSize: 'normal', thickness: 'thick', dashed: false,
+    };
+    private readonly pathStyle = { ...this.lineStyle };
+    private readonly pointStyle: Pick<PointsTool, 'hollow' | 'size'> = { size: 'normal' };
+    private drawStyleEl: HTMLElement | null = null;
+    private btnDrawStyle: IconButtonHandle | null = null;
+    private btnFinishPath: IconButtonHandle | null = null;
+    private syncDrawStyle: (() => void) | null = null;
     private drawMode: 'select' | 'line' | 'path' | 'point' = 'select';
     private snapEnabled = true;
     private drawPoints: Pt[] = [];
@@ -554,6 +565,7 @@ export class TikzModal extends Modal implements PanelHost {
     private dragOverlay: { ghost: Pt[][]; points: Pt[] | null; pivot: Pt | null; snapped: Pt | null } | null = null;
     private onModalKeyDown: ((e: KeyboardEvent) => void) | null = null;
     private onModalKeyUp: ((e: KeyboardEvent) => void) | null = null;
+    private onDrawStyleEscape: ((e: KeyboardEvent) => void) | null = null;
     private onWindowBlur: (() => void) | null = null;
     /** Drag toggle state when no plugin stores it (harness, tests). */
     private dragEditLocal = true;
@@ -935,6 +947,7 @@ export class TikzModal extends Modal implements PanelHost {
         // A running drag restores its start texts before the draft flush; a keyboard nudge keeps its texts.
         this.abortObjectDrag(false);
         this.dropKeySession();
+        this.closeDrawStyle();
         this.clearSelection();
         this.clearHover();
         // Playing sliders snap back onto their step first, so the flushed draft never stores a sub-step value.
@@ -1224,7 +1237,7 @@ export class TikzModal extends Modal implements PanelHost {
 
         this.readoutEl = stage.createDiv({ cls: ['etz-readout', 'tikz-hidden'], attr: { 'aria-hidden': 'true' } });
 
-        this.drawToolbarEl = stage.createDiv({ cls: 'etz-draw-toolbar' });
+        this.drawToolbarEl = stage.createDiv({ cls: 'etz-draw-toolbar', attr: { role: 'group', 'aria-label': 'Drawing tools' } });
         this.btnDrawSelect = iconButton(this.drawToolbarEl, {
             icon: 'mouse-pointer-2',
             label: 'Select (V)',
@@ -1240,8 +1253,8 @@ export class TikzModal extends Modal implements PanelHost {
             onClick: () => this.setDrawMode('line'),
         });
         this.btnDrawPath = iconButton(this.drawToolbarEl, {
-            icon: 'polyline',
-            label: 'Connected path (P) — Enter or double-click finishes',
+            icon: 'activity',
+            label: 'Connected path (P) — Finish path, Enter or double-click',
             pressed: this.drawMode === 'path',
             tooltipPosition: 'bottom',
             onClick: () => this.setDrawMode('path'),
@@ -1261,6 +1274,33 @@ export class TikzModal extends Modal implements PanelHost {
             tooltipPosition: 'bottom',
             onClick: () => this.toggleSnap(),
         });
+
+        this.btnDrawStyle = iconButton(this.drawToolbarEl, {
+            icon: 'sliders-horizontal',
+            label: 'Drawing style',
+            tooltipPosition: 'bottom',
+            onClick: () => this.toggleDrawStyle(),
+        });
+        this.btnDrawStyle.el.setAttr('aria-expanded', 'false');
+        this.btnFinishPath = iconButton(this.drawToolbarEl, {
+            icon: 'check',
+            label: 'Finish path (Enter)',
+            tooltipPosition: 'bottom',
+            onClick: () => {
+                this.finishDrawingPath();
+                this.chartEl?.focus();
+            },
+        });
+        const styleId = uniqueId('etz-draw-style');
+        this.drawStyleEl = this.drawToolbarEl.createDiv({
+            cls: ['etz-draw-style', 'tikz-hidden'],
+            attr: { id: styleId, role: 'group', 'aria-label': 'Drawing style' },
+        });
+        this.btnDrawStyle.el.setAttr('aria-controls', styleId);
+        this.modalEl.addEventListener('pointerdown', (e) => {
+            if (!this.drawToolbarEl?.contains(e.target as Node)) this.closeDrawStyle();
+        });
+        this.updateDrawControls();
 
         const pill = stage.createDiv({ cls: 'etz-pill' });
         iconButton(pill, { icon: 'maximize-2', label: 'Fit ranges to the functions', tooltipPosition: 'top', onClick: () => this.autoFit() });
@@ -1675,7 +1715,7 @@ export class TikzModal extends Modal implements PanelHost {
         const chart = this.chartEl;
         if (!chart) return;
         const middle = e.button === 1 && !this.is3D();
-        if (e.button !== 0 && !middle) return;
+        if ((e.button !== 0 && !middle) || (e.pointerType === 'touch' && !e.isPrimary)) return;
         // A second finger or button while an object is pressed or dragged is ignored (no multi-touch editing).
         if (this.drag && (this.drag.kind === 'press' || this.drag.kind === 'object')) return;
         this.flushKeySession();
@@ -1722,68 +1762,34 @@ export class TikzModal extends Modal implements PanelHost {
                             regionName: '',
                             objective: '',
                             sense: 'max',
-                            size: 'normal',
+                            ...this.pointStyle,
                             dropLines: false,
                             color: 'blue',
                             label: '',
                         };
-                        const prevTools = this.list<Tool>('tools');
-                        this.settings.setValue('tools', [...prevTools, tool]);
-                        this.showUndo(`Add ${tool.name}`, () => {
-                            this.settings.setValue('tools', prevTools);
-                            this.scheduleUpdate();
-                        });
-                        this.scheduleUpdate();
+                        this.addDrawnTool(tool);
                         this.dragLayer?.clear();
                         return;
                     } else if (this.drawMode === 'line') {
-                        if (this.drawPoints.length === 0) {
+                        const start = this.drawPoints[0];
+                        if (!start) {
                             this.drawPoints = [finalPt];
                             this.dragLayer?.ghost([[finalPt, finalPt]], [finalPt]);
                             if (snap) this.dragLayer?.snap(snap.screen);
-                            return;
                         } else {
-                            const p1 = this.drawPoints[0];
-                            const p2 = finalPt;
-                            if (Math.hypot(p2.x - p1.x, p2.y - p1.y) > 1e-6) {
-                                const pathStr = `(${formatCoord(p1.x)}, ${formatCoord(p1.y)}); (${formatCoord(p2.x)}, ${formatCoord(p2.y)})`;
-                                const taken = this.takenNames();
-                                const tool: SegmentTool = {
-                                    id: newId(),
-                                    name: nextToolName('segment', taken),
-                                    type: 'segment',
-                                    dim: 2,
-                                    path: pathStr,
-                                    closed: false,
-                                    style: 'line',
-                                    start: 'none',
-                                    end: 'none',
-                                    thickness: 'thick',
-                                    dashed: false,
-                                    color: 'blue',
-                                    label: '',
-                                };
-                                const prevTools = this.list<Tool>('tools');
-                                this.settings.setValue('tools', [...prevTools, tool]);
-                                this.showUndo(`Add ${tool.name}`, () => {
-                                    this.settings.setValue('tools', prevTools);
-                                    this.scheduleUpdate();
-                                });
-                                this.scheduleUpdate();
+                            if (Math.hypot(finalPt.x - start.x, finalPt.y - start.y) > 1e-6) {
+                                this.addDrawnSegment([start, finalPt], this.lineStyle);
                             }
-                            this.drawPoints = [];
-                            this.dragLayer?.clear();
-                            return;
+                            this.cancelDrawing();
                         }
+                        return;
                     } else if (this.drawMode === 'path') {
                         if (this.drawPoints.length > 0) {
                             const last = this.drawPoints[this.drawPoints.length - 1];
-                            if (Math.hypot(finalPt.x - last.x, finalPt.y - last.y) < 1e-6) {
-                                this.finishDrawingPath();
-                                return;
-                            }
+                            if (Math.hypot(finalPt.x - last.x, finalPt.y - last.y) < 1e-6) return;
                         }
                         this.drawPoints.push(finalPt);
+                        this.updateDrawControls();
                         this.dragLayer?.ghost([this.drawPoints], this.drawPoints);
                         if (snap) this.dragLayer?.snap(snap.screen);
                         return;
@@ -2432,6 +2438,7 @@ export class TikzModal extends Modal implements PanelHost {
             };
         }
         this.drawSelection();
+        this.updateDrawControls();
         if (this.activeTab === 'build') this.build?.flash?.(target.cardSource);
         this.announce(selectAnnouncement(target, this.unitText(target)));
     }
@@ -2441,7 +2448,9 @@ export class TikzModal extends Modal implements PanelHost {
         if (!sel) return;
         this.flushKeySession();
         this.selected = null;
+        this.closeDrawStyle();
         sel.releaseEscape();
+        this.updateDrawControls();
         this.dragLayer?.selection(null, null);
     }
 
@@ -2534,6 +2543,7 @@ export class TikzModal extends Modal implements PanelHost {
             this.finishDrawingPath();
             return;
         }
+        if (this.drawMode !== 'select') return;
         const found = this.findTarget(e.clientX, e.clientY, e.target, 'mouse');
         if (!found || found.target.lock) return;
         e.preventDefault();
@@ -2969,6 +2979,12 @@ export class TikzModal extends Modal implements PanelHost {
         this.scope.register(['Mod', 'Shift'], 'Z', undoKey(true));
 
         const down = (e: KeyboardEvent) => this.onDragKey(e, true);
+        const escape = (e: KeyboardEvent) => {
+            if (e.key !== 'Escape' || !this.syncDrawStyle || !this.modalEl.contains(e.target as Node)) return;
+            e.preventDefault();
+            e.stopPropagation();
+            this.closeDrawStyle(true);
+        };
         const up = (e: KeyboardEvent) => this.onDragKey(e, false);
         const blur = () => {
             // Keys released while the window was in the background never send keyup.
@@ -2980,6 +2996,8 @@ export class TikzModal extends Modal implements PanelHost {
         this.modalEl.addEventListener('keydown', down, true);
         this.modalEl.addEventListener('keyup', up, true);
         window.addEventListener('blur', blur);
+        this.modalEl.ownerDocument.defaultView?.addEventListener('keydown', escape, true);
+        this.onDrawStyleEscape = escape;
         this.onModalKeyDown = down;
         this.onModalKeyUp = up;
         this.onWindowBlur = blur;
@@ -2989,6 +3007,10 @@ export class TikzModal extends Modal implements PanelHost {
         if (this.onModalKeyDown) this.modalEl.removeEventListener('keydown', this.onModalKeyDown, true);
         if (this.onModalKeyUp) this.modalEl.removeEventListener('keyup', this.onModalKeyUp, true);
         if (this.onWindowBlur) window.removeEventListener('blur', this.onWindowBlur);
+        if (this.onDrawStyleEscape) {
+            this.modalEl.ownerDocument.defaultView?.removeEventListener('keydown', this.onDrawStyleEscape, true);
+            this.onDrawStyleEscape = null;
+        }
         this.onModalKeyDown = this.onModalKeyUp = this.onWindowBlur = null;
     }
 
@@ -3421,6 +3443,8 @@ export class TikzModal extends Modal implements PanelHost {
         this.gridBtn?.setPressed(this.settings.getValue('showLargeGrid') === true);
         this.dragToggle?.setPressed(this.dragEditOn());
         this.drawToolbarEl?.toggleClass('tikz-hidden', this.is3D());
+        if (this.is3D()) this.closeDrawStyle();
+        this.updateDrawControls();
         const lock = this.lockBtn;
         if (!lock) return;
         lock.setPressed(this.panLocked);
@@ -3446,9 +3470,9 @@ export class TikzModal extends Modal implements PanelHost {
     }
 
     private setDrawMode(mode: 'select' | 'line' | 'path' | 'point') {
+        this.closeDrawStyle();
         this.drawMode = mode;
-        this.drawPoints = [];
-        this.dragLayer?.clear();
+        this.cancelDrawing();
         this.btnDrawSelect?.setPressed(mode === 'select');
         this.btnDrawLine?.setPressed(mode === 'line');
         this.btnDrawPath?.setPressed(mode === 'path');
@@ -3469,40 +3493,172 @@ export class TikzModal extends Modal implements PanelHost {
     }
 
     private finishDrawingPath() {
-        if (this.drawPoints.length >= 2) {
-            const pts = this.drawPoints;
-            const pathStr = pts.map((p) => `(${formatCoord(p.x)}, ${formatCoord(p.y)})`).join('; ');
-            const taken = this.takenNames();
-            const tool: SegmentTool = {
-                id: newId(),
-                name: nextToolName('segment', taken),
-                type: 'segment',
-                dim: 2,
-                path: pathStr,
-                closed: false,
-                style: 'line',
-                start: 'none',
-                end: 'none',
-                thickness: 'thick',
-                dashed: false,
-                color: 'blue',
-                label: '',
-            };
-            const prevTools = this.list<Tool>('tools');
-            this.settings.setValue('tools', [...prevTools, tool]);
-            this.showUndo(`Add ${tool.name}`, () => {
-                this.settings.setValue('tools', prevTools);
-                this.scheduleUpdate();
-            });
-            this.scheduleUpdate();
-        }
-        this.drawPoints = [];
-        this.dragLayer?.clear();
+        if (this.drawPoints.length >= 2) this.addDrawnSegment(this.drawPoints, this.pathStyle);
+        this.cancelDrawing();
     }
 
     private cancelDrawing() {
         this.drawPoints = [];
         this.dragLayer?.clear();
+        this.updateDrawControls();
+    }
+
+    private addDrawnSegment(points: Pt[], style: typeof this.lineStyle) {
+        const path = points.map((p) => `(${formatCoord(p.x)}, ${formatCoord(p.y)})`).join('; ');
+        this.addDrawnTool({
+            id: newId(),
+            name: nextToolName('segment', this.takenNames()),
+            type: 'segment',
+            dim: 2,
+            path,
+            closed: false,
+            style: 'line',
+            ...style,
+            color: 'blue',
+            label: '',
+        });
+    }
+
+    private addDrawnTool(tool: SegmentTool | PointsTool) {
+        const snapshot = { ...tool };
+        const add = () => {
+            const tools = this.list<Tool>('tools');
+            if (tools.some((t) => t.id === tool.id) || this.takenNames().includes(tool.name)) return false;
+            this.settings.setValue('tools', [...tools, { ...snapshot }]);
+            this.commit();
+            return true;
+        };
+        const remove = () => {
+            const tools = this.list<Tool>('tools');
+            const current = tools.find((t) => t.id === tool.id);
+            // Leave the object intact if another editor changed it after it was drawn.
+            if (!current || [...Object.keys(current), ...Object.keys(snapshot)].some(
+                (key) => Reflect.get(current, key) !== Reflect.get(snapshot, key)
+            )) return false;
+            this.settings.setValue('tools', tools.filter((t) => t !== current));
+            this.commit();
+            return true;
+        };
+        if (add()) this.recordDrawEdit({ label: `Add ${tool.name}`, undo: remove, redo: add });
+    }
+
+    private recordDrawEdit(entry: HistoryEntry) {
+        this.pushHistory(entry);
+        this.showMessage(entry.label, { text: UNDO_BUTTON, run: () => this.undoLast() });
+    }
+
+    private selectedDrawTool(): SegmentTool | PointsTool | undefined {
+        const ref = this.selected?.target.units[0]?.ref;
+        if (ref?.kind !== 'tool') return undefined;
+        return this.list<Tool>('tools').find(
+            (t): t is SegmentTool | PointsTool => t.id === ref.id && (t.type === 'points' || (t.type === 'segment' && t.style !== 'brace'))
+        );
+    }
+
+    private updateDrawControls() {
+        const tool = this.drawMode === 'select' ? this.selectedDrawTool() : undefined;
+        this.btnDrawStyle?.setDisabled(this.drawMode === 'select' && !tool);
+        this.btnDrawStyle?.setLabel(tool ? `Style for ${tool.name}` : 'Drawing style');
+        this.btnFinishPath?.el.toggleClass('tikz-hidden', this.drawMode !== 'path' || this.drawPoints.length < 2);
+        this.syncDrawStyle?.();
+    }
+
+    private closeDrawStyle(restoreFocus = false) {
+        if (!this.syncDrawStyle) return;
+        this.syncDrawStyle = null;
+        this.drawStyleEl?.addClass('tikz-hidden');
+        this.btnDrawStyle?.el.setAttr('aria-expanded', 'false');
+        if (restoreFocus) this.btnDrawStyle?.el.focus();
+    }
+
+    private toggleDrawStyle() {
+        if (this.syncDrawStyle) {
+            this.closeDrawStyle(true);
+            return;
+        }
+        const panel = this.drawStyleEl;
+        if (!panel) return;
+        const tool = this.drawMode === 'select' ? this.selectedDrawTool() : undefined;
+        if (this.drawMode === 'select' && !tool) return;
+        panel.empty();
+        panel.createDiv({
+            cls: 'etz-draw-style-title',
+            text: tool ? `Style · ${tool.name}` : this.drawMode === 'point' ? 'New points' : this.drawMode === 'path' ? 'New paths' : 'New lines',
+        });
+        const sync: Array<() => void> = [];
+        const choice = <T extends string>(
+            label: string, options: ReadonlyArray<readonly [T, string]>,
+            read: () => T, write: (value: T) => void, enabled = () => true
+        ) => {
+            const row = panel.createEl('label', { cls: 'etz-draw-style-row' });
+            row.createSpan({ text: label });
+            const select = row.createEl('select', { cls: 'dropdown' });
+            for (const [value, text] of options) select.createEl('option', { value, text });
+            select.addEventListener('change', () => {
+                const option = options.find(([value]) => value === select.value);
+                if (option && enabled()) write(option[0]);
+                this.syncDrawStyle?.();
+            });
+            sync.push(() => {
+                select.value = read();
+                select.disabled = !enabled();
+                row.toggleClass('tikz-hidden', !enabled());
+            });
+        };
+        const sizes = [['small', 'Small'], ['normal', 'Normal'], ['large', 'Large']] as const;
+        if (tool?.type === 'points' || this.drawMode === 'point') {
+            const style = tool?.type === 'points' ? tool : this.pointStyle;
+            choice('Marker', [['filled', 'Filled circle'], ['hollow', 'Hollow circle']] as const,
+                () => style.hollow ? 'hollow' : 'filled',
+                (value) => this.changeDrawStyle(style, { hollow: value === 'hollow' ? true : undefined }, tool));
+            choice<MarkerSize>('Size', sizes, () => style.size, (size) => this.changeDrawStyle(style, { size }, tool));
+        } else {
+            const style = tool?.type === 'segment' ? tool : this.drawMode === 'path' ? this.pathStyle : this.lineStyle;
+            const segment = tool?.type === 'segment' ? tool : undefined;
+            const endsAllowed = () => !segment || (!segment.closed && segment.style !== 'brace');
+            const getEnd = (side: 'start' | 'end') => segment ? endpointOf(segment, side) : style[side] ?? 'none';
+            const endpoints = [['none', 'None'], ['arrow', 'Arrowhead'], ['dot', 'Filled circle'], ['hollow', 'Hollow circle']] as const;
+            for (const side of ['start', 'end'] as const) {
+                choice<EndpointStyle>(side === 'start' ? 'Start' : 'End', endpoints, () => getEnd(side), (value) => {
+                    if (segment) {
+                        this.changeDrawStyle(segment, { style: 'line', start: getEnd('start'), end: getEnd('end'), [side]: value }, segment);
+                    } else style[side] = value;
+                }, endsAllowed);
+            }
+            choice<MarkerSize>('Marker size', sizes, () => style.markerSize ?? 'normal',
+                (markerSize) => this.changeDrawStyle(style, { markerSize }, tool),
+                () => endsAllowed() && [getEnd('start'), getEnd('end')].some((end) => end === 'dot' || end === 'hollow'));
+            choice('Stroke', [['solid', 'Solid'], ['dashed', 'Dashed']] as const,
+                () => style.dashed ? 'dashed' : 'solid',
+                (value) => this.changeDrawStyle(style, { dashed: value === 'dashed' }, tool));
+            choice('Width', Object.entries(THICKNESS_OPTIONS), () => style.thickness,
+                (thickness) => this.changeDrawStyle(style, { thickness }, tool));
+        }
+        this.syncDrawStyle = () => sync.forEach((update) => update());
+        this.syncDrawStyle();
+        panel.removeClass('tikz-hidden');
+        this.btnDrawStyle?.el.setAttr('aria-expanded', 'true');
+        panel.querySelector<HTMLSelectElement>('select:not(:disabled)')?.focus();
+    }
+
+    private changeDrawStyle<T extends object>(style: T, patch: Partial<T>, tool?: Tool) {
+        const fields = Object.entries(patch).filter(([key, value]) => Reflect.get(style, key) !== value);
+        if (!fields.length) return;
+        const before = fields.map(([key]) => [key, Reflect.get(style, key)] as const);
+        const apply = (from: ReadonlyArray<readonly [string, unknown]>, to: ReadonlyArray<readonly [string, unknown]>) => {
+            const target = tool ? this.list<Tool>('tools').find((t) => t.id === tool.id) : style;
+            if (!target || from.some(([key, value]) => Reflect.get(target, key) !== value)) return false;
+            for (const [key, value] of to) {
+                if (value === undefined) Reflect.deleteProperty(target, key);
+                else Reflect.set(target, key, value);
+            }
+            if (tool) this.commit();
+            this.syncDrawStyle?.();
+            return true;
+        };
+        if (apply(before, fields) && tool) {
+            this.recordDrawEdit({ label: `Style ${tool.name}`, undo: () => apply(fields, before), redo: () => apply(before, fields) });
+        }
     }
 
     private collectExistingPoints(): Pt[] {

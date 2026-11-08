@@ -5,10 +5,11 @@ import {computeScene2D,computeScene3D} from '../src/scene';
 import {parseChartText} from '../src/text/parse';
 import {printChartText} from '../src/text/print';
 import {canonical} from '../src/chartdata';
+import { makeChart } from './_drag';
 
 const tools:any[]=[
     {type:'points',name:'P1',points:'(0, 0.5)',hollow:true},
-    {type:'segment',name:'S1',path:'(-2, 0); (0, 1); (2, 0)',start:'hollow',end:'arrow'},
+    {type:'segment',name:'S1',path:'(-2, 0); (0, 1); (2, 0)',start:'hollow',end:'arrow',markerSize:'large',thickness:'very thick',dashed:true},
 ];
 function settings(extra:any={}){return SettingsManager.fromJSON({v:4,tools,...extra});}
 function scene(data:any={}){
@@ -24,13 +25,17 @@ test('point and independent path endpoints survive text and JSON round trips',()
     const restored=settings(data).serialize().tools as any[];
     assert.equal(restored[0].hollow,true);
     assert.equal(restored[1].start,'hollow');assert.equal(restored[1].end,'arrow');
+    assert.equal(restored[1].markerSize, 'large');
 });
 test('a modern path decorates only its outer endpoints',()=>{
     const s=scene();
     const markers=s.items.flatMap(i=>i.markers);
     assert.equal(markers.length,2);assert(markers.every(p=>p.hollow));
+    assert.equal(markers.find((p) => p.x === -2)?.size, 'large');
     const stroke=s.items.flatMap(i=>i.strokes)[0];
     assert.equal(stroke.lines.length,1);assert.equal(stroke.arrow,'forward');
+    assert.equal(stroke.width, 'very thick');
+    assert.equal(stroke.dashed, true);
 });
 test('legacy arrows retain per-leg heads without adding modern fields',()=>{
     const s=scene({tools:[{type:'segment',name:'S1',path:'(0,0); (1,1); (2,0)',style:'both'}]});
@@ -55,4 +60,22 @@ test('3D hollow points and mixed path ends propagate into scene and TikZ',()=>{
 test('2D TikZ preserves filled/open marks and arrow ends',()=>{
     const code=settings().generateTikzCode();
     assert(code.includes('fill=white, draw='));assert(code.includes('->'));
+});
+
+test('opposite arrowheads share one dashed segment and export at both ends', () => {
+    const segment = { ...tools[1], path: '(0, 1); (2, 1)', start: 'arrow' };
+    const stroke = scene({ tools: [segment] }).items.flatMap((item) => item.strokes)[0];
+    assert.equal(stroke.arrow, 'both');
+    assert.equal(stroke.lines.length, 1);
+    assert.match(settings({ tools: [segment] }).generateTikzCode(), /very thick, dashed[^\n]*<->/);
+});
+
+test('a hollow point and a marked path endpoint keep their distinct hit targets', () => {
+    const { ctx } = makeChart({ v: 4, xmin: '-5', xmax: '5', tools });
+    const pick = (x: number, y: number) => ctx.hits.pick({ x, y }, { point: 9, line: 6 }, ctx.map);
+    assert.equal(pick(0, 0.5)?.shape.source, 'P1');
+    assert.equal(pick(0, 0.5)?.shape.part.part, 'point');
+    assert.equal(pick(-2, 0)?.shape.source, 'S1');
+    assert.equal(pick(-2, 0)?.shape.part.part, 'vertex');
+    assert.equal(pick(-1, 0.5)?.shape.part.part, 'leg');
 });

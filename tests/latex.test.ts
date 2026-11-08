@@ -155,6 +155,13 @@ const LEGACY_3D: Record<string, Record<string, unknown>> = {
 const AWKWARD = ['x_1', '50% cut', '$x^*$', 'x + y <= 4 | "q"', 'costs $5 and $10'];
 
 const STRESS: Record<string, Record<string, unknown>> = {
+    'drawing-styles': chart({
+        tools: [
+            { type: 'segment', name: 'S1', path: '(1, 1); (4, 2)', start: 'arrow', end: 'arrow', dashed: true, thickness: 'very thick' },
+            { type: 'segment', name: 'S2', path: '(2, 3); (4, 4); (6, 3)', start: 'hollow', end: 'dot', markerSize: 'large' },
+            { type: 'points', name: 'P1', points: '(7, 2)', hollow: true, size: 'small' },
+        ],
+    }),
     steep: chart({
         xmin: '-10',
         xmax: '10',

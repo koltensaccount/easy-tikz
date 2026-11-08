@@ -417,6 +417,7 @@ function toolLine(min: Data, full: Data, ctx: Ctx): string {
     } else if(type === 'segment') {
         o.take('start',v=>typeof v==='string'&&['none','arrow','dot','hollow'].includes(v)?`start ${v}`:null);
         o.take('end',v=>typeof v==='string'&&['none','arrow','dot','hollow'].includes(v)?`end ${v}`:null);
+        o.take('markerSize', (v) => v === 'small' || v === 'normal' || v === 'large' ? `marker size ${v}` : null);
         o.common();
         o.label();
     } else {

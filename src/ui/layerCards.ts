@@ -1718,6 +1718,19 @@ class SegmentCard extends ToolCard<SegmentTool> {
             return {side,control};
         });
 
+        const sizeField = field(this.body, { label: 'Endpoint size', layout: 'inline' });
+        const size = segmented<MarkerSize>(sizeField.controlEl, {
+            label: 'Endpoint marker size',
+            value: t.markerSize ?? 'normal',
+            cls: 'etz-layer-size',
+            options: [shortOption('small', 'S', 'Small'), shortOption('normal', 'M', 'Medium'), shortOption('large', 'L', 'Large')],
+            onChange: (v) => {
+                t.markerSize = v;
+                this.changed();
+            },
+        });
+        sizeField.bind(size.el);
+
         this.lineRow({
             thickness: () => t.thickness,
             setThickness: (v) => {
@@ -1743,7 +1756,16 @@ class SegmentCard extends ToolCard<SegmentTool> {
         this.labelField('optional, e.g. width');
         this.onSync(() => {
             style.setValue(t.style==='brace'?'brace':'line');
-            for(const {side,control} of ends){control.setValue(endpointOf(t,side));control.setDisabled(t.style==='brace'||t.closed);}
+            const showEnds = t.style !== 'brace' && !t.closed;
+            for (const { side, control } of ends) {
+                control.setValue(endpointOf(t, side));
+                control.setDisabled(!showEnds);
+            }
+            size.setValue(t.markerSize ?? 'normal');
+            sizeField.el.toggleClass('tikz-hidden', !showEnds || !ends.some(({ side }) => {
+                const endpoint = endpointOf(t, side);
+                return endpoint === 'dot' || endpoint === 'hollow';
+            }));
         });
     }
 

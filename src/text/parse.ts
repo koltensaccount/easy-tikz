@@ -264,6 +264,7 @@ function isOption(raw: string): boolean {
     const lower = o.toLowerCase();
     if (!o || splitTop(o, ',').length > 1) return false;
     if (isColour(lower) || THICKNESSES.includes(lower) || OPTION_WORDS.has(lower)) return true;
+    if (/^(?:(?:start|end) (?:none|arrow|dot|hollow)|marker size (?:small|normal|large)|hollow|filled)$/i.test(o)) return true;
     if (/^(label|labels|legend)\s+"/i.test(o)) return true;
     if (/^tangent(\s+at)?\s+\S/i.test(o)) return true;
     if (/^(opacity\s+[-+\d.e]+|pattern\s+[a-z-]+|samples\s+[\d.]+)$/i.test(o)) return true;
@@ -538,6 +539,8 @@ function applyKindOption(b: Builder, kind: string, target: Data, opt: Piece): bo
     }
     if (kind === 'curve' || kind === 'segment') {
         if(kind==='segment'){
+            const size = /^marker size (small|normal|large)$/.exec(lower);
+            if (size) return set(target, 'markerSize', size[1]);
             const endpoint=/^(start|end)\s+(none|arrow|dot|hollow)$/i.exec(opt.text.trim());
             if(endpoint)return set(target,endpoint[1].toLowerCase(),endpoint[2].toLowerCase());
         }

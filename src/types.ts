@@ -237,6 +237,8 @@ export interface SegmentTool extends ToolBase {
     style: SegmentStyle;
     start?: EndpointStyle;
     end?: EndpointStyle;
+    /** Size of the circles on an open path. */
+    markerSize?: MarkerSize;
     thickness: string;
     dashed: boolean;
     /** Template drawn beside the middle of the path / brace ('' = none). */

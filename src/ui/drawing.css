@@ -51,3 +51,59 @@
     top: 8px;
     transform: translateX(-50%) scale(0.95);
 }
+
+.etz-draw-toolbar button.etz-icon-btn:focus-visible,
+.etz-draw-style select:focus-visible {
+    outline: 2px solid var(--interactive-accent);
+    outline-offset: 2px;
+}
+
+.etz-draw-style {
+    position: absolute;
+    top: calc(100% + 8px);
+    left: 50%;
+    transform: translateX(-50%);
+    display: grid;
+    gap: 6px;
+    width: max-content;
+    min-width: 198px;
+    padding: 10px 12px;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: var(--radius-m);
+    background: var(--background-primary);
+    box-shadow: var(--shadow-s);
+    font-size: var(--font-ui-small);
+}
+
+.etz-draw-style-title {
+    color: var(--text-normal);
+    font-weight: var(--font-semibold);
+    padding-bottom: 2px;
+}
+
+.etz-draw-style-row {
+    display: grid;
+    grid-template-columns: 1fr 110px;
+    align-items: center;
+    gap: 12px;
+    color: var(--text-muted);
+}
+
+.etz-draw-style select {
+    width: 100%;
+}
+
+@media (pointer: coarse) {
+    .etz-draw-toolbar button.etz-icon-btn.mod-md {
+        min-width: 44px;
+        min-height: 44px;
+    }
+
+    .etz-shell.is-narrow .etz-draw-toolbar {
+        transform: translateX(-50%);
+    }
+
+    .etz-draw-style select {
+        min-height: 44px;
+    }
+}
