@@ -28,7 +28,8 @@ import {
     edgeLabelSide3D,
     labelMetricsFor,
 } from './scene';
-import { sampleCurve } from './util';
+import { sampleCurve, formatTick, tickValues } from './util';
+import { formatPiLatex, shouldUsePiTicks } from './signals';
 
 // ------------------------------------------------------------------ tuning
 
@@ -566,6 +567,15 @@ export function generateTikz2D(settings: SettingsManager, ctx: MathContext): str
     } else if (config.axisStyle === 'axes') opts.push('axis lines=left');
     if (config.gridMinor) opts.push(`grid=both, minor tick num=${Math.max(1, Math.round(num(config.minorTickNum, 5)))}`);
     else if (config.gridMajor) opts.push('grid=major');
+
+    const stepX = (view.xmax - view.xmin) / Math.max(2, num(config.majorTickNum, 8));
+    const xs = tickValues(view.xmin, view.xmax, stepX);
+    if (shouldUsePiTicks(xs, config.tickFormatX)) {
+        const ticks = xs.map((x) => fmtNum(x)).join(', ');
+        const labels = xs.map((x) => formatPiLatex(x) ?? `$${formatTick(x)}$`).join(', ');
+        opts.push(`xtick={${ticks}}, xticklabels={${labels}}`);
+    }
+
     // Without rad, pgfplots evaluates sin(x) in degrees.
     opts.push('trig format plots=rad');
     // NaN and out-of-range samples become gaps instead of errors or straight connectors.

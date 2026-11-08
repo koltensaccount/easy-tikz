@@ -124,6 +124,14 @@ function knownKeys(part: string, defaults: Record<string, Data>): Set<string> {
         keys.add('v');
     }
     if (TOOL_TYPES.includes(part as ToolType)) keys.add('type');
+    if (part === 'segment') {
+        keys.add('start');
+        keys.add('end');
+    }
+    if (part === 'points') {
+        keys.add('hollow');
+        keys.add('stems');
+    }
     if (part === 'function') keys.add('legendLabel');
     if (part === 'label') keys.add('z');
     return keys;

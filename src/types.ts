@@ -218,6 +218,8 @@ export interface PointsTool extends ToolBase {
     dropLines: boolean;
     size: MarkerSize;
     hollow?: boolean;
+    /** Vertical stem lines from y=0 to each sample point (conventional stem plot). */
+    stems?: boolean;
 }
 
 export interface SegmentTool extends ToolBase {
@@ -270,6 +272,8 @@ export interface RendererConfig {
     gridMinor: boolean;
     minorTickNum: number;
     majorTickNum: number;
+    tickFormatX?: 'auto' | 'numeric' | 'pi';
+    tickFormatY?: 'auto' | 'numeric' | 'pi';
     functions: FunctionParameters[];
     annotations: Annotation[];
     /** Already migrated (v4 shapes only). */

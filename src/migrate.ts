@@ -1071,6 +1071,7 @@ function completePoints(src: Record<string, unknown>, ctx: ConvertContext): Poin
         dropLines: bool(src.dropLines, d.dropLines),
         size: oneOf(src.size, MARKER_SIZES, d.size),
         ...(src.hollow === true ? { hollow: true } : {}),
+        ...(src.stems === true ? { stems: true } : {}),
     };
 }
 
@@ -1748,6 +1749,46 @@ function recipes2D(): Recipe[] {
             available: in2D,
             build: (ctx) => segmentRecipe(ctx, { path: '(1, 1); (4, 1)', style: 'brace', label: 'width' }),
         },
+        {
+            id: 'discrete-sequence',
+            section: 'Signals and Systems',
+            label: 'Discrete-time sequence x[n]',
+            hint: 'Conventional stem plot with sample stems extending from the baseline.',
+            available: in2D,
+            build: (ctx) => pointsRecipe(ctx, { points: '(-2, 1); (-1, 2); (0, 0); (1, -1); (2, 2)', stems: true, color: 'blue' }),
+        },
+        {
+            id: 'unit-step',
+            section: 'Signals and Systems',
+            label: 'Unit step u(t)',
+            hint: 'Step signal u(t) with jump at 0 and hollow/filled endpoints.',
+            available: in2D,
+            build: (ctx) => segmentRecipe(ctx, { path: '(-3, 0); (0, 0); (0, 1); (4, 1)', style: 'line', thickness: 'thick', color: 'blue' }),
+        },
+        {
+            id: 'impulse',
+            section: 'Signals and Systems',
+            label: 'Dirac impulse δ(t)',
+            hint: 'Symbolic continuous-time impulse as an arrow with weight label.',
+            available: in2D,
+            build: (ctx) => segmentRecipe(ctx, { path: '(0, 0); (0, 2)', style: 'forward', label: '(1)', color: 'blue', thickness: 'thick' }),
+        },
+        {
+            id: 'piecewise-signal',
+            section: 'Signals and Systems',
+            label: 'Piecewise waveform',
+            hint: 'Waveform with constant and ramp sections and jump discontinuity.',
+            available: in2D,
+            build: (ctx) => segmentRecipe(ctx, { path: '(-3, 0); (-1, 0); (0, 1); (2, 1)', style: 'line', thickness: 'thick', color: 'blue' }),
+        },
+        {
+            id: 'fourier-spectrum',
+            section: 'Signals and Systems',
+            label: 'Fourier line spectrum |X(ω)|',
+            hint: 'Discrete frequency-domain magnitude spectrum with harmonic stems.',
+            available: in2D,
+            build: (ctx) => pointsRecipe(ctx, { points: '(-6.283, 0.6); (-3.142, 1.4); (0, 2.5); (3.142, 1.4); (6.283, 0.6)', stems: true, color: 'blue' }),
+        },
         labelRecipe(in2D),
         sliderRecipe(in2D),
     ];
@@ -1906,6 +1947,10 @@ function exCurve(id: string, name: string, fields: Partial<CurveBody>): CurveToo
 
 function exPoints(id: string, name: string, fields: Partial<PointsBody>): PointsTool {
     return { ...pointsDefaults(2), id, name, ...fields };
+}
+
+function exSegment(id: string, name: string, fields: Partial<SegmentBody>): SegmentTool {
+    return { ...segmentDefaults(2), id, name, ...fields };
 }
 
 /**
@@ -2109,6 +2154,196 @@ export const EXAMPLES: ChartExample[] = [
             ],
             tools: [{ ...planeDefaults(), id: 't0', name: 'PL1', value: 'h', fillOpacity: 0.35 }],
             annotations: [{ x: '2', y: '-2', z: 'h', text: 'z = {h}', color: 'orange', size: 'normal', anchor: 'right' }],
+        }),
+    },
+    {
+        id: 'ct-waveform',
+        title: 'Continuous-time signal',
+        description: 'Damped oscillatory waveform x(t) = exp(-0.4t) * cos(2*pi*t) on wide layout.',
+        is3D: false,
+        data: exampleChart({
+            xmin: '0',
+            xmax: '6',
+            ymin: '-1.2',
+            ymax: '1.2',
+            size_x_cm: 15,
+            size_y_cm: 6,
+            axis_style: 'middle',
+            showLargeGrid: true,
+            axis_label_x: 't',
+            axis_label_y: 'x(t)',
+            functions: [
+                exFunction('f1', 'exp(-0.4*x) * cos(2*pi*x)', {
+                    color: 'blue',
+                    thickness: 'thick',
+                    domain: '0:6',
+                }),
+            ],
+            tools: [
+                exSegment('t0', 'S1', {
+                    path: '(0, 0); (0, 1)',
+                    style: 'line',
+                    thickness: 'thin',
+                    dashed: true,
+                    color: 'gray',
+                    label: 'x(0) = 1',
+                }),
+            ],
+        }),
+    },
+    {
+        id: 'dt-sequence',
+        title: 'Discrete-time sequence',
+        description: 'Stem plot x[n] with integer sample stems extending from the baseline.',
+        is3D: false,
+        data: exampleChart({
+            xmin: '-4',
+            xmax: '5',
+            ymin: '-2',
+            ymax: '3',
+            size_x_cm: 15,
+            size_y_cm: 6,
+            axis_style: 'middle',
+            showLargeGrid: true,
+            axis_label_x: 'n',
+            axis_label_y: 'x[n]',
+            tools: [
+                exPoints('t0', 'P1', {
+                    source: 'list',
+                    points: '(-3, 0); (-2, 1); (-1, 2); (0, 0); (1, -1); (2, 2); (3, 1); (4, 0)',
+                    stems: true,
+                    color: 'blue',
+                    size: 'normal',
+                }),
+            ],
+        }),
+    },
+    {
+        id: 'piecewise-signal',
+        title: 'Piecewise waveform',
+        description: 'Continuous-time waveform with ramp, pulse, and jump discontinuity.',
+        is3D: false,
+        data: exampleChart({
+            xmin: '-3',
+            xmax: '4',
+            ymin: '-1',
+            ymax: '2.5',
+            size_x_cm: 12,
+            size_y_cm: 8,
+            axis_style: 'middle',
+            showLargeGrid: true,
+            axis_label_x: 't',
+            axis_label_y: 'x(t)',
+            tools: [
+                exSegment('t0', 'S1', {
+                    path: '(-3, 0); (-1, 0); (0, 1); (1, 1)',
+                    thickness: 'thick',
+                    color: 'blue',
+                    end: 'hollow',
+                }),
+                exSegment('t1', 'S2', {
+                    path: '(1, 0); (3, 0)',
+                    thickness: 'thick',
+                    color: 'blue',
+                    start: 'dot',
+                }),
+            ],
+        }),
+    },
+    {
+        id: 'unit-step-impulse',
+        title: 'Unit step and impulse',
+        description: 'Step signal u(t) with jump, and Dirac impulse delta(t) with weight label.',
+        is3D: false,
+        data: exampleChart({
+            xmin: '-3',
+            xmax: '4',
+            ymin: '-0.5',
+            ymax: '2.5',
+            size_x_cm: 12,
+            size_y_cm: 8,
+            axis_style: 'middle',
+            showLargeGrid: true,
+            axis_label_x: 't',
+            axis_label_y: 'x(t)',
+            tools: [
+                exSegment('t0', 'S1', {
+                    path: '(-3, 0); (0, 0)',
+                    thickness: 'thick',
+                    color: 'gray',
+                    end: 'hollow',
+                }),
+                exSegment('t1', 'S2', {
+                    path: '(0, 1); (3.5, 1)',
+                    thickness: 'thick',
+                    color: 'gray',
+                    start: 'dot',
+                    label: 'u(t)',
+                }),
+                exSegment('t2', 'S3', {
+                    path: '(0, 0); (0, 2)',
+                    style: 'forward',
+                    thickness: 'thick',
+                    color: 'blue',
+                    label: 'δ(t) (1)',
+                }),
+            ],
+        }),
+    },
+    {
+        id: 'fourier-mag',
+        title: 'Fourier magnitude spectrum',
+        description: 'Two-sided line spectrum |X(ω)| with π-aware axis ticks (-2π to 2π).',
+        is3D: false,
+        data: exampleChart({
+            xmin: '-7',
+            xmax: '7',
+            ymin: '0',
+            ymax: '3',
+            size_x_cm: 15,
+            size_y_cm: 6,
+            axis_style: 'middle',
+            tickFormatX: 'pi',
+            showLargeGrid: true,
+            axis_label_x: 'ω',
+            axis_label_y: '|X(jω)|',
+            tools: [
+                exPoints('t0', 'P1', {
+                    source: 'list',
+                    points: '(-6.283, 0.6); (-3.142, 1.4); (0, 2.5); (3.142, 1.4); (6.283, 0.6)',
+                    stems: true,
+                    color: 'blue',
+                    size: 'normal',
+                }),
+            ],
+        }),
+    },
+    {
+        id: 'fourier-phase',
+        title: 'Fourier phase spectrum',
+        description: 'Odd-symmetric frequency phase spectrum ∠X(ω) with π-aware ticks.',
+        is3D: false,
+        data: exampleChart({
+            xmin: '-7',
+            xmax: '7',
+            ymin: '-2',
+            ymax: '2',
+            size_x_cm: 15,
+            size_y_cm: 6,
+            axis_style: 'middle',
+            tickFormatX: 'pi',
+            showLargeGrid: true,
+            axis_label_x: 'ω',
+            axis_label_y: '∠X(jω)',
+            tools: [
+                exPoints('t0', 'P1', {
+                    source: 'list',
+                    points: '(-6.283, 0); (-3.142, 1.571); (0, 0); (3.142, -1.571); (6.283, 0)',
+                    stems: true,
+                    color: 'purple',
+                    size: 'normal',
+                }),
+            ],
         }),
     },
 ];

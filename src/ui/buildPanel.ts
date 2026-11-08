@@ -90,6 +90,7 @@ const SECTION_ICONS: Record<string, string> = {
     'Curves and lines': 'spline',
     Points: 'circle-dot',
     'Segments and arrows': 'move-up-right',
+    'Signals and Systems': 'activity',
     Labels: 'type',
     Sliders: 'sliders-horizontal',
     '3D': 'box',

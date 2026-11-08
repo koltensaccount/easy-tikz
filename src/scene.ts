@@ -1890,6 +1890,25 @@ function computePointsTool(t: PointsTool, ctx: Ctx): Output {
         addHandle(out, handle);
     });
 
+    if (t.stems) {
+        // Vertical stem lines extending from the baseline (y = 0 when visible, else view.ymin) to (x, y)
+        const yBase = view.ymin <= 0 && view.ymax >= 0 ? 0 : view.ymin;
+        const stemLines: Pt[][] = [];
+        for (const p of pts) {
+            if (p.x < view.xmin || p.x > view.xmax) continue;
+            stemLines.push([{ x: p.x, y: yBase }, { x: p.x, y: p.y }]);
+        }
+        if (stemLines.length) {
+            out.strokes.push({
+                lines: stemLines,
+                color,
+                width: 'normal',
+                dashed: false,
+                exact: true,
+            });
+        }
+    }
+
     if (t.dropLines) {
         // To the axes: y = 0 / x = 0 for centred axes when 0 is visible, else the view edge.
         const middle = ctx.axisStyle === 'middle';

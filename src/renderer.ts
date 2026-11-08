@@ -13,6 +13,7 @@
 import { AnnotationSize, FillPattern, FunctionParameters, MarkerSize, RendererConfig, Tool } from './types';
 import { COLOR_MAP, THICKNESS_MAP, mixHex, resolveCssColor } from './colors';
 import { niceInterval, formatTick, marchingGrid, sampleCurve, stripLatex, tickValues } from './util';
+import { formatPiTick, shouldUsePiTicks } from './signals';
 import { extractMathSource, renderMathLabel, flushMathRenders } from './mathlabel';
 import { FunctionInfo, FunctionKind, MathContext, labelDisplayText } from './mathcontext';
 import {
@@ -486,8 +487,12 @@ export class SVGRenderer {
         const pt = (n: number) => n * this.ptPx;
         const ys = tickValues(v.ymin, v.ymax, stepY);
         const xs = tickValues(v.xmin, v.xmax, stepX);
-        const yTickW = ys.reduce((m, y) => Math.max(m, formatTick(y).length * tickFs * CHAR_WIDTH_EM), 0);
-        const lastX = xs.length ? formatTick(xs[xs.length - 1]).length * tickFs * CHAR_WIDTH_EM : 0;
+        const usePiX = shouldUsePiTicks(xs, cfg.tickFormatX);
+        const usePiY = shouldUsePiTicks(ys, cfg.tickFormatY);
+        const formatX = (x: number) => (usePiX ? formatPiTick(x) ?? formatTick(x) : formatTick(x));
+        const formatY = (y: number) => (usePiY ? formatPiTick(y) ?? formatTick(y) : formatTick(y));
+        const yTickW = ys.reduce((m, y) => Math.max(m, formatY(y).length * tickFs * CHAR_WIDTH_EM), 0);
+        const lastX = xs.length ? formatX(xs[xs.length - 1]).length * tickFs * CHAR_WIDTH_EM : 0;
         const titleH = String(cfg.title ?? '').trim() ? this.fontPx(TITLE_PT) * 1.25 : 0;
         const title = titleH ? titleH + pt(TITLE_GAP_PT) : 0;
         const middle = cfg.axisStyle === 'middle';
@@ -1014,9 +1019,13 @@ export class SVGRenderer {
             g.appendChild(this.line(x1, y1, ex, ey, { ...axisAttrs, 'marker-end': this.arrow(TEXT_MUTED, axisWidth) }));
         };
         const tick = (x1: number, y1: number, x2: number, y2: number) => g.appendChild(this.line(x1, y1, x2, y2, tickAttrs));
+        const usePiX = shouldUsePiTicks(xs, cfg.tickFormatX);
+        const usePiY = shouldUsePiTicks(ys, cfg.tickFormatY);
+        const formatX = (x: number) => (usePiX ? formatPiTick(x) ?? formatTick(x) : formatTick(x));
+        const formatY = (y: number) => (usePiY ? formatPiTick(y) ?? formatTick(y) : formatTick(y));
         // x tick labels hang below (x, y); y tick labels end at (x, y), centred on it.
-        const xTickLabel = (value: number, x: number, y: number) => this.tickLabel(g, value, x, y + 0.78 * tickFs, 'middle', tickFs);
-        const yTickLabel = (value: number, x: number, y: number) => this.tickLabel(g, value, x, y + 0.35 * tickFs, 'end', tickFs);
+        const xTickLabel = (value: number, x: number, y: number) => this.tickLabel(g, formatX(value), x, y + 0.78 * tickFs, 'middle', tickFs);
+        const yTickLabel = (value: number, x: number, y: number) => this.tickLabel(g, formatY(value), x, y + 0.35 * tickFs, 'end', tickFs);
 
         if (cfg.axisStyle === 'middle') {
             axisLine(left, oy, right, oy);
@@ -1093,7 +1102,7 @@ export class SVGRenderer {
     }
 
     /** One tick label with its baseline at (x, y). */
-    private tickLabel(g: SVGElement, value: number, x: number, y: number, anchor: HAnchor, fs: number): void {
+    private tickLabel(g: SVGElement, text: string, x: number, y: number, anchor: HAnchor, fs: number): void {
         const t = this.el('text', {
             x: num(x),
             y: num(y),
@@ -1102,7 +1111,7 @@ export class SVGRenderer {
             'font-size': num(fs),
             'font-family': 'var(--font-text)',
         });
-        t.textContent = formatTick(value);
+        t.textContent = text;
         g.appendChild(t);
     }
 

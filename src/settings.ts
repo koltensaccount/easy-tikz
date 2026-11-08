@@ -57,6 +57,8 @@ function defaultValues(): Record<string, unknown> {
         gridSize: 5,
         // Major grid density (live preview only; pgfplots picks its own ticks).
         majorTickNum: 8,
+        tickFormatX: 'auto',
+        tickFormatY: 'numeric',
         // Axis ranges are expressions (sliders allowed), resolved by resolveView.
         ...RANGE_DEFAULTS,
         axis_style: 'box',
@@ -308,6 +310,8 @@ export class SettingsManager {
             gridMinor: this.getValue('showSmallGrid') === true,
             minorTickNum: numberValue(this.getValue('gridSize'), 5),
             majorTickNum: numberValue(this.getValue('majorTickNum'), 8),
+            tickFormatX: (this.getValue('tickFormatX') as 'auto' | 'numeric' | 'pi') || 'auto',
+            tickFormatY: (this.getValue('tickFormatY') as 'auto' | 'numeric' | 'pi') || 'numeric',
             functions: arrayValue<FunctionParameters>(this.getValue('functions')),
             annotations: arrayValue<Annotation>(this.getValue('annotations')),
             tools: this.tools(),

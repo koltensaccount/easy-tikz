@@ -2,7 +2,7 @@ import { App, MarkdownView, Menu, Modal, Notice, Platform, TFile, loadMathJax } 
 import { cloneData, errorText, fitPixelScale, niceInterval } from './util';
 import { exportableSvg, svgToPng } from './svgExport';
 import { issueText, mergeViewErrors } from './issues';
-import { Annotation, Function3DParameters, FunctionParameters, Parameter, RendererConfig, Tool } from './types';
+import { Annotation, Function3DParameters, FunctionParameters, Parameter, PointsTool, RendererConfig, SegmentTool, Tool } from './types';
 import { RANGE_DEFAULTS, RangeKey, SettingsManager } from './settings';
 import { centerOrigin } from './appearance';
 import { RenderLayout, SVGRenderer } from './renderer';
@@ -11,7 +11,8 @@ import { SVG3DRenderer } from './renderer3d';
 import { MathContext, renameIdentifier, renameToolReferences } from './mathcontext';
 import { SceneCache, SceneIssue } from './scene';
 import { View } from './geometry';
-import { EXAMPLES, defaultParameter } from './migrate';
+import { EXAMPLES, defaultParameter, newId, nextToolName } from './migrate';
+import { SnapResult, findSnapCandidate, formatCoord } from './signals';
 import type { ChartDraft } from './templates';
 import type { BlockFormat } from './blockjson';
 import { isChartText } from './text/parse';
@@ -430,6 +431,17 @@ export class TikzModal extends Modal implements PanelHost {
     private gridBtn: IconButtonHandle | null = null;
     private lockBtn: IconButtonHandle | null = null;
     private ctaBtn: TextButtonHandle | null = null;
+
+    // Direct drawing toolbar state
+    private drawMode: 'select' | 'line' | 'path' | 'point' = 'select';
+    private snapEnabled = true;
+    private drawPoints: Pt[] = [];
+    private drawToolbarEl: HTMLElement | null = null;
+    private btnDrawSelect: IconButtonHandle | null = null;
+    private btnDrawLine: IconButtonHandle | null = null;
+    private btnDrawPath: IconButtonHandle | null = null;
+    private btnDrawPoint: IconButtonHandle | null = null;
+    private btnDrawSnap: IconButtonHandle | null = null;
 
     // Panels
     private build: BuildPanelHandle | null = null;
@@ -1212,6 +1224,44 @@ export class TikzModal extends Modal implements PanelHost {
 
         this.readoutEl = stage.createDiv({ cls: ['etz-readout', 'tikz-hidden'], attr: { 'aria-hidden': 'true' } });
 
+        this.drawToolbarEl = stage.createDiv({ cls: 'etz-draw-toolbar' });
+        this.btnDrawSelect = iconButton(this.drawToolbarEl, {
+            icon: 'mouse-pointer-2',
+            label: 'Select (V)',
+            pressed: this.drawMode === 'select',
+            tooltipPosition: 'bottom',
+            onClick: () => this.setDrawMode('select'),
+        });
+        this.btnDrawLine = iconButton(this.drawToolbarEl, {
+            icon: 'minus',
+            label: 'Line segment (L)',
+            pressed: this.drawMode === 'line',
+            tooltipPosition: 'bottom',
+            onClick: () => this.setDrawMode('line'),
+        });
+        this.btnDrawPath = iconButton(this.drawToolbarEl, {
+            icon: 'polyline',
+            label: 'Connected path (P) — Enter or double-click finishes',
+            pressed: this.drawMode === 'path',
+            tooltipPosition: 'bottom',
+            onClick: () => this.setDrawMode('path'),
+        });
+        this.btnDrawPoint = iconButton(this.drawToolbarEl, {
+            icon: 'circle-dot',
+            label: 'Place point (D)',
+            pressed: this.drawMode === 'point',
+            tooltipPosition: 'bottom',
+            onClick: () => this.setDrawMode('point'),
+        });
+        this.drawToolbarEl.createDiv({ cls: 'etz-draw-sep' });
+        this.btnDrawSnap = iconButton(this.drawToolbarEl, {
+            icon: 'magnet',
+            label: 'Snapping (S)',
+            pressed: this.snapEnabled,
+            tooltipPosition: 'bottom',
+            onClick: () => this.toggleSnap(),
+        });
+
         const pill = stage.createDiv({ cls: 'etz-pill' });
         iconButton(pill, { icon: 'maximize-2', label: 'Fit ranges to the functions', tooltipPosition: 'top', onClick: () => this.autoFit() });
         iconButton(pill, { icon: 'crosshair', label: 'Center origin', tooltipPosition: 'top', onClick: () => this.centerOrigin() });
@@ -1543,6 +1593,10 @@ export class TikzModal extends Modal implements PanelHost {
         chart.addEventListener('pointerleave', () => {
             this.lastPointer = null;
             if (this.drag) return;
+            if (this.drawMode !== 'select') {
+                this.dragLayer?.snap(null);
+                if (this.drawPoints.length === 0) this.dragLayer?.ghost([], null);
+            }
             this.hideReadout();
             this.clearHover();
         });
@@ -1645,6 +1699,96 @@ export class TikzModal extends Modal implements PanelHost {
             if (middle) e.preventDefault();
             const touch = e.pointerType === 'touch';
             const forcePan = middle || this.spaceHeld;
+
+            if (!forcePan && this.drawMode !== 'select') {
+                const mathPt = this.toMath(e.clientX, e.clientY);
+                if (mathPt) {
+                    const snap = this.getSnapCandidate(mathPt, e.shiftKey);
+                    const finalPt: Pt = snap ? snap.point : { x: mathPt.x, y: mathPt.y };
+                    if (this.drawMode === 'point') {
+                        const taken = this.takenNames();
+                        const tool: PointsTool = {
+                            id: newId(),
+                            name: nextToolName('points', taken),
+                            type: 'points',
+                            dim: 2,
+                            source: 'list',
+                            points: `(${formatCoord(finalPt.x)}, ${formatCoord(finalPt.y)})`,
+                            ref1: '',
+                            ref2: '',
+                            regionName: '',
+                            objective: '',
+                            sense: 'max',
+                            size: 'normal',
+                            dropLines: false,
+                            color: 'blue',
+                            label: '',
+                        };
+                        const prevTools = this.list<Tool>('tools');
+                        this.settings.setValue('tools', [...prevTools, tool]);
+                        this.showUndo(`Add ${tool.name}`, () => {
+                            this.settings.setValue('tools', prevTools);
+                            this.scheduleUpdate();
+                        });
+                        this.scheduleUpdate();
+                        this.dragLayer?.clear();
+                        return;
+                    } else if (this.drawMode === 'line') {
+                        if (this.drawPoints.length === 0) {
+                            this.drawPoints = [finalPt];
+                            this.dragLayer?.ghost([[finalPt, finalPt]], [finalPt]);
+                            if (snap) this.dragLayer?.snap(snap.screen);
+                            return;
+                        } else {
+                            const p1 = this.drawPoints[0];
+                            const p2 = finalPt;
+                            if (Math.hypot(p2.x - p1.x, p2.y - p1.y) > 1e-6) {
+                                const pathStr = `(${formatCoord(p1.x)}, ${formatCoord(p1.y)}); (${formatCoord(p2.x)}, ${formatCoord(p2.y)})`;
+                                const taken = this.takenNames();
+                                const tool: SegmentTool = {
+                                    id: newId(),
+                                    name: nextToolName('segment', taken),
+                                    type: 'segment',
+                                    dim: 2,
+                                    path: pathStr,
+                                    closed: false,
+                                    style: 'line',
+                                    start: 'none',
+                                    end: 'none',
+                                    thickness: 'thick',
+                                    dashed: false,
+                                    color: 'blue',
+                                    label: '',
+                                };
+                                const prevTools = this.list<Tool>('tools');
+                                this.settings.setValue('tools', [...prevTools, tool]);
+                                this.showUndo(`Add ${tool.name}`, () => {
+                                    this.settings.setValue('tools', prevTools);
+                                    this.scheduleUpdate();
+                                });
+                                this.scheduleUpdate();
+                            }
+                            this.drawPoints = [];
+                            this.dragLayer?.clear();
+                            return;
+                        }
+                    } else if (this.drawMode === 'path') {
+                        if (this.drawPoints.length > 0) {
+                            const last = this.drawPoints[this.drawPoints.length - 1];
+                            if (Math.hypot(finalPt.x - last.x, finalPt.y - last.y) < 1e-6) {
+                                this.finishDrawingPath();
+                                return;
+                            }
+                        }
+                        this.drawPoints.push(finalPt);
+                        this.dragLayer?.ghost([this.drawPoints], this.drawPoints);
+                        if (snap) this.dragLayer?.snap(snap.screen);
+                        return;
+                    }
+                }
+                return;
+            }
+
             const found = forcePan ? null : this.findTarget(e.clientX, e.clientY, e.target, e.pointerType);
             let lock: Lock | null = null;
             let tap: PendingClick['tap'] = null;
@@ -1740,8 +1884,28 @@ export class TikzModal extends Modal implements PanelHost {
             else this.moveObject(drag, e);
         } else if (!drag && !this.is3D()) {
             this.readMods(e);
-            if (e.buttons === 0) this.updateHover(e.clientX, e.clientY, e.target, e.pointerType, false);
-            else this.clearHover();
+            if (this.drawMode !== 'select') {
+                const mathPt = this.toMath(e.clientX, e.clientY);
+                if (mathPt) {
+                    const snap = this.getSnapCandidate(mathPt, e.shiftKey);
+                    const activePt: Pt = snap ? snap.point : { x: mathPt.x, y: mathPt.y };
+                    if (snap) {
+                        this.dragLayer?.snap(snap.screen);
+                    } else {
+                        this.dragLayer?.snap(null);
+                    }
+                    if (this.drawPoints.length > 0) {
+                        const previewPath = [...this.drawPoints, activePt];
+                        this.dragLayer?.ghost([previewPath], this.drawPoints);
+                    }
+                } else {
+                    this.dragLayer?.snap(null);
+                }
+                this.clearHover();
+            } else {
+                if (e.buttons === 0) this.updateHover(e.clientX, e.clientY, e.target, e.pointerType, false);
+                else this.clearHover();
+            }
         }
         if (!this.is3D()) this.updateReadout(e.clientX, e.clientY);
     }
@@ -2358,6 +2522,11 @@ export class TikzModal extends Modal implements PanelHost {
 
     private onDoubleClick(e: MouseEvent) {
         if (this.is3D()) return;
+        if (this.drawMode === 'path' && this.drawPoints.length >= 2) {
+            e.preventDefault();
+            this.finishDrawingPath();
+            return;
+        }
         const found = this.findTarget(e.clientX, e.clientY, e.target, 'mouse');
         if (!found || found.target.lock) return;
         e.preventDefault();
@@ -3081,6 +3250,50 @@ export class TikzModal extends Modal implements PanelHost {
     }
 
     private onPreviewKey(e: KeyboardEvent) {
+        // Escape / Enter drawing operations
+        if (e.key === 'Escape') {
+            if (this.drawPoints.length > 0) {
+                e.preventDefault();
+                this.cancelDrawing();
+                return;
+            } else if (this.drawMode !== 'select') {
+                e.preventDefault();
+                this.setDrawMode('select');
+                return;
+            }
+        }
+        if (e.key === 'Enter' && this.drawMode === 'path' && this.drawPoints.length >= 2) {
+            e.preventDefault();
+            this.finishDrawingPath();
+            return;
+        }
+
+        // Direct drawing toolbar keyboard shortcuts (when not editing an object or dragging)
+        if (!e.altKey && !e.ctrlKey && !e.metaKey && !this.selected && !(this.drag && this.drag.kind === 'object')) {
+            const k = e.key.toLowerCase();
+            if (k === 'v') {
+                e.preventDefault();
+                this.setDrawMode('select');
+                return;
+            } else if (k === 'l') {
+                e.preventDefault();
+                this.setDrawMode('line');
+                return;
+            } else if (k === 'p') {
+                e.preventDefault();
+                this.setDrawMode('path');
+                return;
+            } else if (k === 'd') {
+                e.preventDefault();
+                this.setDrawMode('point');
+                return;
+            } else if (k === 's') {
+                e.preventDefault();
+                this.toggleSnap();
+                return;
+            }
+        }
+
         const keys = ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'];
         // The view stays fixed while an object is pressed or dragged (its px map belongs to the drag), as for the wheel.
         if (this.drag && (this.drag.kind === 'press' || this.drag.kind === 'object') && keys.includes(e.key)) {
@@ -3200,6 +3413,7 @@ export class TikzModal extends Modal implements PanelHost {
     private updatePill() {
         this.gridBtn?.setPressed(this.settings.getValue('showLargeGrid') === true);
         this.dragToggle?.setPressed(this.dragEditOn());
+        this.drawToolbarEl?.toggleClass('tikz-hidden', this.is3D());
         const lock = this.lockBtn;
         if (!lock) return;
         lock.setPressed(this.panLocked);
@@ -3222,6 +3436,133 @@ export class TikzModal extends Modal implements PanelHost {
     private togglePanLock() {
         this.panLocked = !this.panLocked;
         this.updatePill();
+    }
+
+    private setDrawMode(mode: 'select' | 'line' | 'path' | 'point') {
+        this.drawMode = mode;
+        this.drawPoints = [];
+        this.dragLayer?.clear();
+        this.btnDrawSelect?.setPressed(mode === 'select');
+        this.btnDrawLine?.setPressed(mode === 'line');
+        this.btnDrawPath?.setPressed(mode === 'path');
+        this.btnDrawPoint?.setPressed(mode === 'point');
+        if (this.chartEl) {
+            this.chartEl.toggleClass('etz-draw-active', mode !== 'select');
+        }
+        if (mode !== 'select') {
+            this.clearSelection();
+            this.clearHover();
+        }
+    }
+
+    private toggleSnap() {
+        this.snapEnabled = !this.snapEnabled;
+        this.btnDrawSnap?.setPressed(this.snapEnabled);
+        if (!this.snapEnabled) this.dragLayer?.snap(null);
+    }
+
+    private finishDrawingPath() {
+        if (this.drawPoints.length >= 2) {
+            const pts = this.drawPoints;
+            const pathStr = pts.map((p) => `(${formatCoord(p.x)}, ${formatCoord(p.y)})`).join('; ');
+            const taken = this.takenNames();
+            const tool: SegmentTool = {
+                id: newId(),
+                name: nextToolName('segment', taken),
+                type: 'segment',
+                dim: 2,
+                path: pathStr,
+                closed: false,
+                style: 'line',
+                start: 'none',
+                end: 'none',
+                thickness: 'thick',
+                dashed: false,
+                color: 'blue',
+                label: '',
+            };
+            const prevTools = this.list<Tool>('tools');
+            this.settings.setValue('tools', [...prevTools, tool]);
+            this.showUndo(`Add ${tool.name}`, () => {
+                this.settings.setValue('tools', prevTools);
+                this.scheduleUpdate();
+            });
+            this.scheduleUpdate();
+        }
+        this.drawPoints = [];
+        this.dragLayer?.clear();
+    }
+
+    private cancelDrawing() {
+        this.drawPoints = [];
+        this.dragLayer?.clear();
+    }
+
+    private collectExistingPoints(): Pt[] {
+        const pts: Pt[] = [];
+        const tools = this.settings.getValue('tools');
+        if (!Array.isArray(tools)) return pts;
+        let math: MathContext;
+        try {
+            math = this.math();
+        } catch {
+            return pts;
+        }
+        for (const t of tools) {
+            if (!t || typeof t !== 'object') continue;
+            if (t.type === 'points' && t.source === 'list' && typeof t.points === 'string') {
+                try {
+                    const list = math.tuples(t.points, 2);
+                    for (const p of list) pts.push({ x: p[0], y: p[1] });
+                } catch {
+                    // Ignore unparseable
+                }
+            } else if (t.type === 'segment' && typeof t.path === 'string') {
+                try {
+                    const list = math.tuples(t.path, 2);
+                    for (const p of list) pts.push({ x: p[0], y: p[1] });
+                } catch {
+                    // Ignore unparseable
+                }
+            }
+        }
+        return pts;
+    }
+
+    private getSnapCandidate(cursorMath: Pt, shiftHeld: boolean): SnapResult | null {
+        if (!this.snapEnabled || !this.layout) return null;
+        const box = this.svgBox();
+        if (!box) return null;
+        const layout = this.layout;
+        const v = layout.view;
+        const toScreen = (p: Pt): Pt => {
+            const fx = (p.x - v.xmin) / (v.xmax - v.xmin);
+            const fy = (v.ymax - p.y) / (v.ymax - v.ymin);
+            const vx = layout.plot.x + fx * layout.plot.w;
+            const vy = layout.plot.y + fy * layout.plot.h;
+            return { x: box.ox + vx * box.s, y: box.oy + vy * box.s };
+        };
+        const stepX = niceInterval(v.xmax - v.xmin, 8);
+        const stepY = niceInterval(v.ymax - v.ymin, 8);
+        return findSnapCandidate(cursorMath, {
+            view: v,
+            stepX,
+            stepY,
+            toScreen,
+            existingPoints: this.collectExistingPoints(),
+            lastPoint: this.drawPoints.length > 0 ? this.drawPoints[this.drawPoints.length - 1] : null,
+            shiftHeld,
+            thresholdPx: 12,
+        });
+    }
+
+    private takenNames(): string[] {
+        return [
+            ...this.list<Parameter>('parameters').map((p) => p.name),
+            ...this.list<FunctionParameters>('functions').map((f) => f.name || ''),
+            ...this.list<Function3DParameters>('functions3D').map((f) => f.name || ''),
+            ...this.list<Tool>('tools').map((t) => t.name),
+        ];
     }
 
     /** factor 0 resets the zoom. */

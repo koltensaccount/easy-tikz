@@ -1195,7 +1195,7 @@ function assertStructurallyValid(ctx: RecipeContext, id: string): void {
 }
 
 test('recipes: the documented lists, unique ids, sections and plain-language text', () => {
-    const sections = ['Functions', 'Regions', 'Curves and lines', 'Points', 'Segments and arrows', 'Labels', 'Sliders', '3D'];
+    const sections = ['Functions', 'Regions', 'Curves and lines', 'Points', 'Segments and arrows', 'Labels', 'Sliders', '3D', 'Signals and Systems'];
     for (const is3D of [false, true]) {
         const list = recipes(is3D);
         assert.equal(new Set(list.map((r) => r.id)).size, list.length);
@@ -1213,7 +1213,9 @@ test('recipes: the documented lists, unique ids, sections and plain-language tex
             'function', 'parametric', 'area-between', 'area-under', 'feasible-region', 'rectangle', 'disk',
             'vertical-line', 'horizontal-line', 'line-equation', 'circle', 'level-curves',
             'points-list', 'intersections', 'corner-points', 'optimum', 'lattice',
-            'segment', 'arrow', 'polyline', 'brace', 'label', 'slider',
+            'segment', 'arrow', 'polyline', 'brace',
+            'discrete-sequence', 'unit-step', 'impulse', 'piecewise-signal', 'fourier-spectrum',
+            'label', 'slider',
         ]
     );
     assert.deepEqual(recipes(true).map((r) => r.id), ['surface', 'plane', 'point', 'segment', 'arrow', 'label', 'slider']);
@@ -1306,8 +1308,11 @@ test('recipes without functions or regions fall back to self-contained formulas'
 // Examples
 // ---------------------------------------------------------------------------
 
-test('EXAMPLES: the six documented ids, complete and migrateSettings-stable', () => {
-    assert.deepEqual(EXAMPLES.map((e) => e.id), ['lp', 'areas', 'tangent', 'levels', 'surplus', 'plane3d']);
+test('EXAMPLES: the documented ids, complete and migrateSettings-stable', () => {
+    assert.deepEqual(EXAMPLES.map((e) => e.id), [
+        'lp', 'areas', 'tangent', 'levels', 'surplus', 'plane3d',
+        'ct-waveform', 'dt-sequence', 'piecewise-signal', 'unit-step-impulse', 'fourier-mag', 'fourier-phase',
+    ]);
     const required = [
         'v', 'dimension', 'documentSetup', 'title', 'size_x_cm', 'size_y_cm', 'show_axis_label', 'axis_label_x',
         'axis_label_y', 'showAxis', 'showLargeGrid', 'showSmallGrid', 'gridSize', 'xmin', 'xmax', 'ymin', 'ymax',

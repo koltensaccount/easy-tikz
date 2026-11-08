@@ -414,6 +414,22 @@ export function createChartPanel(parent: HTMLElement, host: PanelHost, opts: Cha
                 },
             });
             equal.setDisabled(isPolar());
+
+            const tickField = field(g.body, { label: 'Ticks', layout: 'inline' });
+            const tickFmt = segmented(tickField.controlEl, {
+                label: 'Tick format',
+                value: str(settings.getValue('tickFormatX')) || 'auto',
+                options: [
+                    { value: 'auto', text: 'Auto' },
+                    { value: 'numeric', text: 'Numeric' },
+                    { value: 'pi', text: 'π' },
+                ],
+                onChange: (value) => {
+                    settings.setValue('tickFormatX', value);
+                    host.requestUpdate();
+                },
+            });
+            tickField.bind(tickFmt.el);
         }
 
         labelInput(g.body, 'x label', xLabelKey, isPolar() ? 'none' : 'x');

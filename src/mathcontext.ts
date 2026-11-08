@@ -1548,6 +1548,22 @@ const TEX_ESCAPES: Record<string, string> = {
     '|': '\\textbar{}',
     // A plain quote that babel shorthands (ngerman, spanish) cannot grab. Not \textquotedbl: OT1 lacks it.
     '"': '\\string"',
+    'π': '\\ensuremath{\\pi}',
+    'δ': '\\ensuremath{\\delta}',
+    'Δ': '\\ensuremath{\\Delta}',
+    'ω': '\\ensuremath{\\omega}',
+    'Ω': '\\ensuremath{\\Omega}',
+    'θ': '\\ensuremath{\\theta}',
+    '∠': '\\ensuremath{\\angle}',
+    'τ': '\\ensuremath{\\tau}',
+    'λ': '\\ensuremath{\\lambda}',
+    'μ': '\\ensuremath{\\mu}',
+    'σ': '\\ensuremath{\\sigma}',
+    'Σ': '\\ensuremath{\\Sigma}',
+    'α': '\\ensuremath{\\alpha}',
+    'β': '\\ensuremath{\\beta}',
+    'γ': '\\ensuremath{\\gamma}',
+    '∞': '\\ensuremath{\\infty}',
 };
 
 /** One character of text, printed as typed (a dollar sign that opens no math is \$). */

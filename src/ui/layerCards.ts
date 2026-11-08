@@ -1262,6 +1262,7 @@ class PointsCard extends ToolCard<PointsTool> {
     private labelSeg!: SegmentedHandle<LabelMode>;
     private labelInput!: BoundExpr;
     private dropLinesChip: ChipHandle | null = null;
+    private stemsChip: ChipHandle | null = null;
 
     constructor(parent: HTMLElement, item: LayerItem, tool: PointsTool, host: PanelHost, actions: LayerCardActions) {
         super(parent, item, tool, host, actions);
@@ -1491,6 +1492,14 @@ class PointsCard extends ToolCard<PointsTool> {
         });
         fillField.bind(fill.el);
         if (!this.is3D()) {
+            this.stemsChip = chip(sizeField.controlEl, {
+                label: 'Stems',
+                value: t.stems === true,
+                onChange: (v) => {
+                    t.stems = v;
+                    this.changed();
+                },
+            });
             this.dropLinesChip = chip(sizeField.controlEl, {
                 label: 'Drop lines',
                 value: t.dropLines,
@@ -1506,6 +1515,7 @@ class PointsCard extends ToolCard<PointsTool> {
             this.senseSeg.setValue(t.sense);
             size.setValue(t.size);
             fill.setValue(t.hollow?'hollow':'filled');
+            if (this.stemsChip) this.stemsChip.setValue(t.stems === true);
             if (this.dropLinesChip) this.dropLinesChip.setValue(t.dropLines);
             // Custom mode survives a refresh even while its text is blank or still
             // the coordinates template it started from (the user is editing it).

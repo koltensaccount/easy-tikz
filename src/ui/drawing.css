@@ -1,0 +1,53 @@
+/*
+ * Styles for Direct Graph Drawing Toolbar and Snapping Feedback.
+ */
+
+.etz-draw-toolbar {
+    position: absolute;
+    top: 10px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    padding: 3px;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 999px;
+    background-color: var(--background-primary);
+    box-shadow: var(--shadow-s);
+    z-index: 10;
+    transition: opacity var(--etz-transition);
+}
+
+.etz-draw-toolbar button.etz-icon-btn {
+    border-radius: 999px;
+    color: var(--text-muted);
+}
+
+.etz-draw-toolbar button.etz-icon-btn:hover {
+    color: var(--text-normal);
+}
+
+.etz-draw-toolbar button.etz-icon-btn.is-active,
+.etz-draw-toolbar button.etz-icon-btn[aria-pressed="true"] {
+    background-color: var(--interactive-accent);
+    color: var(--text-on-accent);
+}
+
+.etz-draw-sep {
+    width: 1px;
+    height: 16px;
+    background-color: var(--background-modifier-border);
+    margin: 0 3px;
+}
+
+/* Active drawing mode cursor on chart preview */
+.etz-chart.etz-draw-active {
+    cursor: crosshair;
+}
+
+/* Responsive handling: keep toolbar accessible on narrow views */
+.etz-shell.is-narrow .etz-draw-toolbar {
+    top: 8px;
+    transform: translateX(-50%) scale(0.95);
+}
