@@ -1917,8 +1917,8 @@ function exampleChart(overrides: Record<string, unknown>): Record<string, unknow
         size_x_cm: 10,
         size_y_cm: 8,
         show_axis_label: true,
-        axis_label_x: 'x',
-        axis_label_y: 'y',
+        axis_label_x: '$x$',
+        axis_label_y: '$y$',
         showAxis: true,
         showLargeGrid: false,
         showSmallGrid: false,
@@ -1934,7 +1934,7 @@ function exampleChart(overrides: Record<string, unknown>): Record<string, unknow
         coordinateSystem: 'cartesian',
         axis_label_x_polar: '',
         axis_label_y_polar: '',
-        axis_label_z: 'z',
+        axis_label_z: '$z$',
         rotationX: 30,
         rotationZ: 45,
         zoom3D: 1,
@@ -2132,8 +2132,8 @@ export const EXAMPLES: ChartExample[] = [
             ymin: '0',
             ymax: '11',
             axis_style: 'axes',
-            axis_label_x: 'Quantity',
-            axis_label_y: 'Price',
+            axis_label_x: '$\\mathrm{Quantity}$',
+            axis_label_y: '$\\mathrm{Price}$',
             parameters: [{ name: 'a', value: 1, min: 0.5, max: 3, step: 0.05 }],
             functions: [
                 exFunction('f1', '10 - a*x', { color: 'blue', thickness: 'thick', showLegend: true, legendLabel: 'Demand' }),
@@ -2191,8 +2191,8 @@ export const EXAMPLES: ChartExample[] = [
             size_y_cm: 6,
             axis_style: 'middle',
             showLargeGrid: true,
-            axis_label_x: 't',
-            axis_label_y: 'x(t)',
+            axis_label_x: '$t$',
+            axis_label_y: '$x(t)$',
             functions: [
                 exFunction('f1', 'exp(-0.4*x) * cos(2*pi*x)', {
                     color: 'blue',
@@ -2226,8 +2226,8 @@ export const EXAMPLES: ChartExample[] = [
             size_y_cm: 6,
             axis_style: 'middle',
             showLargeGrid: true,
-            axis_label_x: 'n',
-            axis_label_y: 'x[n]',
+            axis_label_x: '$n$',
+            axis_label_y: '$x[n]$',
             tools: [
                 exPoints('t0', 'P1', {
                     source: 'list',
@@ -2253,8 +2253,8 @@ export const EXAMPLES: ChartExample[] = [
             size_y_cm: 8,
             axis_style: 'middle',
             showLargeGrid: true,
-            axis_label_x: 't',
-            axis_label_y: 'x(t)',
+            axis_label_x: '$t$',
+            axis_label_y: '$x(t)$',
             tools: [
                 exSegment('t0', 'S1', {
                     path: '(-3, 0); (-1, 0); (0, 1); (1, 1)',
@@ -2285,8 +2285,8 @@ export const EXAMPLES: ChartExample[] = [
             size_y_cm: 8,
             axis_style: 'middle',
             showLargeGrid: true,
-            axis_label_x: 't',
-            axis_label_y: 'x(t)',
+            axis_label_x: '$t$',
+            axis_label_y: '$x(t)$',
             tools: [
                 exSegment('t0', 'S1', {
                     path: '(-3, 0); (0, 0)',
@@ -2326,8 +2326,8 @@ export const EXAMPLES: ChartExample[] = [
             axis_style: 'middle',
             tickFormatX: 'pi',
             showLargeGrid: true,
-            axis_label_x: 'ω',
-            axis_label_y: '|X(jω)|',
+            axis_label_x: '$\\omega$',
+            axis_label_y: '$\\lvert X(j\\omega)\\rvert$',
             tools: [
                 exPoints('t0', 'P1', {
                     source: 'list',
@@ -2354,8 +2354,8 @@ export const EXAMPLES: ChartExample[] = [
             axis_style: 'middle',
             tickFormatX: 'pi',
             showLargeGrid: true,
-            axis_label_x: 'ω',
-            axis_label_y: '∠X(jω)',
+            axis_label_x: '$\\omega$',
+            axis_label_y: '$\\angle X(j\\omega)$',
             tools: [
                 exPoints('t0', 'P1', {
                     source: 'list',
