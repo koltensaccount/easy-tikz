@@ -239,6 +239,8 @@ export interface SegmentTool extends ToolBase {
     end?: EndpointStyle;
     /** Size of the circles on an open path. */
     markerSize?: MarkerSize;
+    /** Positive horizontal repeat interval in 2D. Empty means a single path. */
+    period?: string;
     thickness: string;
     dashed: boolean;
     /** Template drawn beside the middle of the path / brace ('' = none). */

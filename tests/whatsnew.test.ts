@@ -213,7 +213,8 @@ test('whats new: the text beside the chart is the whole chart, in a few lines', 
     assert.deepEqual(back.problems, []);
     assert.equal(canonical(back.data), canonical(whatsNewChart()));
     const lines = text.split('\n');
-    assert.ok(lines.length <= 10, `${lines.length} lines`);
+    // Explicit LaTeX axis labels add their own lines to the chart text.
+    assert.ok(lines.length <= 12, `${lines.length} lines`);
     assert.ok(!lines.some((l) => l.startsWith('raw ') || l.startsWith('set ')), text);
 });
 

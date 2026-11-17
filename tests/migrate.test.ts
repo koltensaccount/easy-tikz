@@ -1224,7 +1224,7 @@ test('recipes: the documented lists, unique ids, sections and plain-language tex
             'vertical-line', 'horizontal-line', 'line-equation', 'circle', 'level-curves',
             'points-list', 'intersections', 'corner-points', 'optimum', 'lattice',
             'segment', 'arrow', 'polyline', 'brace',
-            'discrete-sequence', 'unit-step', 'impulse', 'piecewise-signal', 'fourier-spectrum',
+            'discrete-sequence', 'unit-step', 'impulse', 'periodic-signal', 'piecewise-signal', 'fourier-spectrum',
             'label', 'slider',
         ]
     );
@@ -1321,7 +1321,7 @@ test('recipes without functions or regions fall back to self-contained formulas'
 test('EXAMPLES: the documented ids, complete and migrateSettings-stable', () => {
     assert.deepEqual(EXAMPLES.map((e) => e.id), [
         'lp', 'areas', 'tangent', 'levels', 'surplus', 'plane3d',
-        'ct-waveform', 'dt-sequence', 'piecewise-signal', 'unit-step-impulse', 'fourier-mag', 'fourier-phase',
+        'periodic-signal', 'ct-waveform', 'dt-sequence', 'piecewise-signal', 'unit-step-impulse', 'fourier-mag', 'fourier-phase',
     ]);
     const required = [
         'v', 'dimension', 'documentSetup', 'title', 'size_x_cm', 'size_y_cm', 'show_axis_label', 'axis_label_x',

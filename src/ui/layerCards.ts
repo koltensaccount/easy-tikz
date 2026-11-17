@@ -1687,6 +1687,26 @@ class SegmentCard extends ToolCard<SegmentTool> {
             },
         });
         pathField.bind(path.h.input);
+        if (!is3D) {
+            const repeat = field(this.body, {
+                label: 'Period',
+                layout: 'inline',
+                hint: 'Repeat this path horizontally across the view. Leave empty for one copy. Edit the Path to change every period.',
+            });
+            const period = this.exprField(repeat.controlEl, {
+                id: 'period',
+                label: 'Repeat period',
+                kind: 'value',
+                placeholder: 'e.g. 2 or 2*pi',
+                get: () => t.period ?? '',
+                set: (value) => {
+                    if (value.trim()) t.period = value;
+                    else delete t.period;
+                },
+            });
+            repeat.bind(period.h.input);
+            this.onSync(() => repeat.el.toggleClass('tikz-hidden', t.style === 'brace'));
+        }
 
         // Braces are 2D only; a 3D segment keeps the option only while it is selected.
         const styles: Array<SegmentOption<SegmentStyle>> = [
@@ -1783,6 +1803,7 @@ class SegmentCard extends ToolCard<SegmentTool> {
         if (pts.length === 1) text = `${kind} through ${pts[0]}`;
         else if (pts.length === 2 || t.style === 'brace') text = `${kind} ${pts[0]} to ${pts[1]}`;
         else text = `${kind} through ${pts.length} points`;
+        if (t.period?.trim()) text += ` · period ${t.period}`;
         return label ? `${text}: ${label}` : text;
     }
 }

@@ -360,6 +360,7 @@ const SECTIONS: Section[] = [
             {
                 list: [
                     'Choose a line/path or brace. Open paths have independent Start and End choices: None, Arrowhead, Filled dot, or Hollow dot. Closed polygons have no endpoints.',
+                    'For a periodic signal, enter a positive **Period** such as `2` or `2*pi`. The path is one period and repeats horizontally across the view. Each copy keeps its own endpoints. Edit the source path or its card to change all copies. Leave Period empty to stop repeating.',
                     '**Closed** joins the last point back to the first (a polygon outline).',
                     'A brace uses the first two points and bulges to the left of the direction from the first point to the second. Swap the points to flip it.',
                     'The label (a template) sits beside the middle of the path.',

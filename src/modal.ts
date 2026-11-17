@@ -715,6 +715,7 @@ export class TikzModal extends Modal implements PanelHost {
                     break;
                 case 'segment':
                     t.path = expr(t.path);
+                    if (t.period) t.period = expr(t.period);
                     t.label = tpl(t.label);
                     break;
                 case 'plane3D':
@@ -3196,7 +3197,7 @@ export class TikzModal extends Modal implements PanelHost {
                     if (reads(t.points) || reads(t.objective) || reads(t.label, true)) return true;
                     break;
                 case 'segment':
-                    if (reads(t.path) || reads(t.label, true)) return true;
+                    if (reads(t.path) || (t.period && reads(t.period)) || reads(t.label, true)) return true;
                     break;
                 case 'plane3D':
                     if (reads(t.value)) return true;

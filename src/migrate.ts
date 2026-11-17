@@ -1086,6 +1086,7 @@ function completeSegment(src: Record<string, unknown>, ctx: ConvertContext): Seg
         style: oneOf(src.style, SEGMENT_STYLES, d.style),
         ...(typeof src.start === 'string' && ['none','arrow','dot','hollow'].includes(src.start) ? { start: src.start as import('./types').EndpointStyle } : {}),
         ...(typeof src.end === 'string' && ['none','arrow','dot','hollow'].includes(src.end) ? { end: src.end as import('./types').EndpointStyle } : {}),
+        ...(typeof src.period === 'string' && src.period.trim() ? { period: src.period } : {}),
         ...(src.markerSize !== undefined ? { markerSize: oneOf(src.markerSize, MARKER_SIZES, 'normal') } : {}),
         thickness: thicknessOf(src.thickness, d.thickness),
         dashed: bool(src.dashed, d.dashed),
@@ -1795,6 +1796,17 @@ function recipes2D(): Recipe[] {
             build: (ctx) => segmentRecipe(ctx, { path: '(0, 0); (0, 2)', style: 'forward', label: '(1)', color: 'blue', thickness: 'thick' }),
         },
         {
+            id: 'periodic-signal',
+            section: 'Signals and Systems',
+            label: 'Periodic waveform',
+            hint: 'Define one period as a path and repeat it across the visible range. Adjust Period in the shape card.',
+            available: in2D,
+            build: (ctx) => segmentRecipe(ctx, {
+                path: '(0, 0); (2, 1)', period: '2', start: 'dot', end: 'hollow',
+                thickness: 'thick', color: 'blue',
+            }),
+        },
+        {
             id: 'piecewise-signal',
             section: 'Signals and Systems',
             label: 'Piecewise waveform',
@@ -2178,6 +2190,21 @@ export const EXAMPLES: ChartExample[] = [
         }),
     },
     {
+        id: 'periodic-signal',
+        title: 'Periodic waveform',
+        description: 'Define one ramp, then repeat it across the view. Edit Path and Period to shape the signal.',
+        is3D: false,
+        data: exampleChart({
+            xmin: '-4', xmax: '8', ymin: '-0.5', ymax: '1.5',
+            axis_style: 'middle', axis_label_x: '$t$', axis_label_y: '$x(t)$',
+            size_x_cm: 15, size_y_cm: 6,
+            tools: [exSegment('t0', 'S1', {
+                path: '(0, 0); (2, 1)', period: '2', start: 'dot', end: 'hollow',
+                thickness: 'thick', color: 'blue',
+            })],
+        }),
+    },
+    {
         id: 'ct-waveform',
         title: 'Continuous-time signal',
         description: 'Damped oscillatory waveform x(t) = exp(-0.4t) * cos(2*pi*t) on wide layout.',
@@ -2327,7 +2354,7 @@ export const EXAMPLES: ChartExample[] = [
             tickFormatX: 'pi',
             showLargeGrid: true,
             axis_label_x: '$\\omega$',
-            axis_label_y: '$\\lvert X(j\\omega)\\rvert$',
+            axis_label_y: '$|X(j\\omega)|$',
             tools: [
                 exPoints('t0', 'P1', {
                     source: 'list',

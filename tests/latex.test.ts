@@ -158,7 +158,7 @@ const STRESS: Record<string, Record<string, unknown>> = {
     'drawing-styles': chart({
         tools: [
             { type: 'segment', name: 'S1', path: '(1, 1); (4, 2)', start: 'arrow', end: 'arrow', dashed: true, thickness: 'very thick' },
-            { type: 'segment', name: 'S2', path: '(2, 3); (4, 4); (6, 3)', start: 'hollow', end: 'dot', markerSize: 'large' },
+            { type: 'segment', name: 'S2', path: '(2, 3); (4, 4); (6, 3)', period: '4', start: 'hollow', end: 'dot', markerSize: 'large' },
             { type: 'points', name: 'P1', points: '(7, 2)', hollow: true, size: 'small' },
         ],
     }),

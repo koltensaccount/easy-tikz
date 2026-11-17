@@ -809,6 +809,7 @@ function toolNode(t: Tool, math: MathContext): SceneNode {
             break;
         case 'segment':
             scan(t.path, 'path');
+            scan(t.period, 'period');
             break;
         case 'plane3D':
             scan(t.value, 'value');
@@ -2036,7 +2037,48 @@ function computeSegmentTool(t: SegmentTool, ctx: Ctx): Output {
         const d = normDir(dir.x, dir.y, ctx.view, { x: 1, y: 0 });
         out.texts.push({ x: p.x, y: p.y, template: 'label', color, size: 'normal', dir: { x: -d.y, y: d.x }, slide: line });
     }
+    if (str(t.period).trim()) repeatSegment(out, t, ctx, pts);
     return out;
+}
+
+/** Repeat the source period as separate paths, preserving jumps and endpoint marks. */
+function repeatSegment(out: Output, tool: SegmentTool, ctx: Ctx, points: Pt[]): void {
+    const result = ctx.math.tryValue(str(tool.period));
+    if (!result.ok || !Number.isFinite(result.value) || result.value <= 0) {
+        fail(out, tool.name, 'period', 'Period must be a finite positive number or expression.');
+        out.strokes = [];
+        out.markers = [];
+        out.texts = [];
+        return;
+    }
+    const period = result.value;
+    const xmin = Math.min(...points.map((point) => point.x));
+    const xmax = Math.max(...points.map((point) => point.x));
+    const first = Math.ceil((ctx.view.xmin - xmax) / period);
+    const last = Math.floor((ctx.view.xmax - xmin) / period);
+    // Bound both geometry and marker work for tiny periods or very wide views.
+    if (!Number.isSafeInteger(first) || !Number.isSafeInteger(last) ||
+        (last - first + 1) * points.length > 20000) {
+        fail(out, tool.name, 'period', 'Too many periods in view. Increase the period or zoom in.');
+        out.strokes = [];
+        out.markers = [];
+        out.texts = [];
+        return;
+    }
+    const strokes = out.strokes;
+    const markers = out.markers;
+    out.strokes = [];
+    out.markers = [];
+    for (let index = first; index <= last; index++) {
+        const offset = index * period;
+        for (const stroke of strokes) {
+            out.strokes.push({
+                ...stroke,
+                lines: stroke.lines.map((line) => line.map((p) => ({ x: p.x + offset, y: p.y }))),
+            });
+        }
+        for (const marker of markers) out.markers.push({ ...marker, x: marker.x + offset });
+    }
 }
 
 // --------------------------------------------------------------- 2D scene

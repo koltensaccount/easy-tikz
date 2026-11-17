@@ -127,6 +127,8 @@ function knownKeys(part: string, defaults: Record<string, Data>): Set<string> {
     if (part === 'segment') {
         keys.add('start');
         keys.add('end');
+        keys.add('markerSize');
+        keys.add('period');
     }
     if (part === 'points') {
         keys.add('hollow');
